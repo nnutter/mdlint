@@ -32,7 +32,9 @@ impl Rule for MD012 {
         for (line_num, line) in parser.lines().iter().enumerate() {
             let line_number = line_num + 1;
 
-            if line.trim().is_empty() {
+            if line.trim().is_empty()
+                && !parser.get_code_block_line_numbers().contains(&line_number)
+            {
                 if consecutive_blank == 0 {
                     blank_start_line = line_number;
                 }

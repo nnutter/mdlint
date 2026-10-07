@@ -30,9 +30,20 @@ impl Rule for MD009 {
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
 
+        let code_blocks = config
+            .and_then(|c| c.get("code_blocks"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
         let mut violations = Vec::new();
 
         for (line_num, line) in parser.lines().iter().enumerate() {
+            if !code_blocks
+                && parser
+                    .get_code_block_line_numbers()
+                    .contains(&(line_num + 1))
+            {
+                continue;
+            }
             let trimmed = line.trim_end();
             let trailing_spaces = line.len() - trimmed.len();
 

@@ -72,6 +72,8 @@ indent = 2
 # strict:    when true, no trailing spaces are allowed even as line breaks.
 #            `mdlint format` replaces trailing-space breaks with backslash breaks.
 [rules.MD009]
+# Code contents are not prose whitespace. Opt in only for a separate code policy.
+code_blocks = false
 br_spaces = 2
 strict = false
 
