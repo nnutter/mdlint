@@ -68,6 +68,7 @@ fn format_markdown(input: &str) -> String {
             _ => false,
         })
         .collect();
+    let mut code_fences = code_block_fences(&events).into_iter();
 
     // Precompute per-event lookahead: is the *next* event Start(List(None))?
     let lookahead: Vec<bool> = (0..events.len())
@@ -94,6 +95,9 @@ fn format_markdown(input: &str) -> String {
         .zip(next_text_char)
         .zip(attached)
     {
+        if matches!(event, Event::Start(Tag::CodeBlock(_))) {
+            state.code_block_fence = code_fences.next().expect("one fence per code block");
+        }
         state.next_is_unordered_list = next_is_ul;
         state.next_text_char = next_char;
         state.attached = attached;
@@ -134,6 +138,36 @@ fn line_after_is_blank(input: &str, end: usize) -> bool {
         .is_none_or(is_blank)
 }
 
+fn code_block_fences(events: &[Event<'_>]) -> Vec<String> {
+    let mut fences = Vec::new();
+    let mut current = None;
+    for event in events {
+        match event {
+            Event::Start(Tag::CodeBlock(kind)) => {
+                let marker = match kind {
+                    CodeBlockKind::Fenced(info) if info.contains('`') => '~',
+                    _ => '`',
+                };
+                current = Some((marker, 3, 0));
+            }
+            Event::Text(text) => {
+                if let Some((marker, length, run)) = &mut current {
+                    for ch in text.chars() {
+                        *run = if ch == *marker { *run + 1 } else { 0 };
+                        *length = (*length).max(*run + 1);
+                    }
+                }
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                let (marker, length, _) = current.take().expect("code block start precedes end");
+                fences.push(marker.to_string().repeat(length));
+            }
+            _ => {}
+        }
+    }
+    fences
+}
+
 fn mk_options() -> Options {
     Options::ENABLE_TABLES
         | Options::ENABLE_FOOTNOTES
@@ -164,6 +198,7 @@ struct FormatterState {
     // Code block state
     in_code_block: bool,
     code_block_indent: String,
+    code_block_fence: String,
 
     // Per-depth item marker widths (e.g. 3 for "1. ", 2 for "- "), used to
     // compute the continuation indent for code blocks inside list items.
@@ -205,6 +240,7 @@ impl FormatterState {
             inline: String::new(),
             in_code_block: false,
             code_block_indent: String::new(),
+            code_block_fence: String::new(),
             list_item_widths: Vec::new(),
             link_stack: Vec::new(),
             next_is_unordered_list: false,
@@ -300,7 +336,7 @@ impl FormatterState {
                     self.write_bq_prefix();
                 }
                 self.out.push_str(&fence_indent);
-                self.out.push_str("```");
+                self.out.push_str(&self.code_block_fence);
                 self.out.push_str(&lang);
                 self.out.push('\n');
                 self.in_code_block = true;
@@ -446,7 +482,8 @@ impl FormatterState {
                 }
                 self.write_bq_prefix();
                 self.out.push_str(&self.code_block_indent.clone());
-                self.out.push_str("```\n");
+                self.out.push_str(&self.code_block_fence);
+                self.out.push('\n');
                 self.in_code_block = false;
                 self.code_block_indent = String::new();
                 self.needs_blank = true;
