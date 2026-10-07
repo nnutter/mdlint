@@ -577,6 +577,7 @@ impl FormatterState {
                 match ch {
                     '\\' => s.push_str("\\\\"),
                     '`' => s.push_str("\\`"),
+                    '*' => s.push_str("\\*"),
                     // A literal `<` in a Text event (pulldown only emits `<` as text
                     // when it does NOT already open a tag).  Left bare, adjacent text
                     // can reconstruct an autolink or HTML tag on re-parse (e.g.

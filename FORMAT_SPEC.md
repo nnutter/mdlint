@@ -148,6 +148,7 @@ This is *important*.
 ```
 
 Exception: underscores inside words (snake_case identifiers) are not emphasis and are not modified.
+Literal asterisks in paragraph or heading text are escaped so that they cannot become emphasis markers.
 
 ### Strong Emphasis (MD050)
 
