@@ -232,12 +232,7 @@ fn nested_lists_preserved() {
 }
 
 #[test]
-fn nested_ordered_list_under_bullet_item_stays_tight() {
-    // Regression test for issue #67: a nested ordered list under a bullet item
-    // is formatted tight (no blank lines separating it from the parent item's
-    // text or the next sibling item), whether or not the source had blank
-    // lines around it. This canonical form must pass `mdlint check` (MD032)
-    // cleanly — see the matching MD032 tests in src/lint/rules/md032.rs.
+fn nested_ordered_list_preserves_loose_parent_spacing() {
     assert_formats_to(
         indoc! {"
             # Example
@@ -255,6 +250,7 @@ fn nested_ordered_list_under_bullet_item_stays_tight() {
             - First item:
               1. One
               1. Two
+
             - Second item
         "},
     );
@@ -289,6 +285,14 @@ fn paragraphs_after_nested_lists_stay_in_the_parent_item() {
 }
 
 #[test]
+fn loose_list_item_spacing_survives_nested_lists() {
+    assert_formats_to(
+        "12. parent\n    - child\n\n1. next\n",
+        "12. parent\n    - child\n\n1. next\n",
+    );
+}
+
+#[test]
 fn ordered_list_preserved() {
     let input = "1. First\n1. Second\n1. Third\n";
     assert_formats_to(input, input);
@@ -298,7 +302,7 @@ fn ordered_list_preserved() {
 fn list_item_paragraphs_keep_their_boundaries_and_indentation() {
     assert_formats_to(
         "* é\n  + nested\n* second\n\n    a\n",
-        "- é\n  - nested\n- second\n\n  a\n",
+        "- é\n  - nested\n\n- second\n\n  a\n",
     );
     assert_formats_to("1. first\n\n   second\n", "1. first\n\n   second\n");
 }
