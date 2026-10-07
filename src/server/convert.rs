@@ -1,14 +1,16 @@
+use crate::error::Result;
+use crate::fix::Fixer;
 use crate::types::{Fix, Violation};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range, TextEdit, Uri};
 use std::path::PathBuf;
 
-/// Convert UTF-8 character index to UTF-16 code unit offset within a line.
+/// Convert a UTF-8 byte offset to a UTF-16 code unit offset within a line.
 #[allow(clippy::cast_possible_truncation)] // UTF-16 code units per char is 1 or 2; sum fits u32
-fn char_idx_to_utf16(line_text: &str, char_idx: usize) -> u32 {
+fn byte_offset_to_utf16(line_text: &str, byte_offset: usize) -> u32 {
     line_text
-        .chars()
-        .take(char_idx)
-        .map(|c| c.len_utf16() as u32)
+        .char_indices()
+        .take_while(|(offset, _)| *offset < byte_offset)
+        .map(|(_, c)| c.len_utf16() as u32)
         .sum()
 }
 
@@ -22,10 +24,10 @@ pub fn violation_to_diagnostic(v: &Violation, content: &str) -> Diagnostic {
     let lsp_char = match v.column {
         None => 0,
         Some(col) => {
-            let char_idx = col.saturating_sub(1);
+            let byte_offset = col.saturating_sub(1);
             lines
                 .get(v.line.saturating_sub(1))
-                .map_or(0, |line| char_idx_to_utf16(line, char_idx))
+                .map_or(0, |line| byte_offset_to_utf16(line, byte_offset))
         }
     };
     let position = Position {
@@ -47,41 +49,29 @@ pub fn violation_to_diagnostic(v: &Violation, content: &str) -> Diagnostic {
 
 /// Convert a `Fix` to an LSP `TextEdit`.
 ///
-/// Whole-line fixes (no column range) span from the start of `line_start`
-/// to the start of the line after `line_end`, capturing the newline.
+/// Whole-line fixes use the shared fixer and replace the document so newline
+/// insertion and deletion have exactly the same semantics as CLI fixes.
 #[allow(clippy::cast_possible_truncation)] // LSP positions are u32; line counts in real files fit
-pub fn fix_to_text_edit(fix: &Fix, content: &str) -> TextEdit {
+pub fn fix_to_text_edit(fix: &Fix, content: &str) -> Result<TextEdit> {
+    let corrected = Fixer::new().apply_fixes_to_content(content, std::slice::from_ref(fix))?;
     let lines: Vec<&str> = content.lines().collect();
 
-    if fix.column_start.is_none() && fix.column_end.is_none() {
-        // Whole-line operation: span from start of line_start to start of line after line_end.
-        // fix.line_end (1-indexed) maps directly to the 0-indexed start of the following line.
-        let start = Position {
-            line: fix.line_start.saturating_sub(1) as u32,
-            character: 0,
-        };
-        let end = Position {
-            line: fix.line_end as u32,
-            character: 0,
-        };
-        TextEdit {
-            range: Range { start, end },
-            new_text: fix.replacement.clone(),
-        }
+    if fix.line_start != fix.line_end || fix.column_start.is_none() || fix.column_end.is_none() {
+        Ok(whole_doc_edit(content, &corrected))
     } else {
         let start_line = fix.line_start.saturating_sub(1);
         let end_line = fix.line_end.saturating_sub(1);
-        let start_char_idx = fix.column_start.map_or(0, |c| c.saturating_sub(1));
-        let end_char_idx = fix.column_end.map_or(0, |c| c.saturating_sub(1));
+        let start_byte = fix.column_start.map_or(0, |c| c.saturating_sub(1));
+        let end_byte = fix.column_end.unwrap_or(0);
 
         let start_utf16 = lines
             .get(start_line)
-            .map_or(0, |l| char_idx_to_utf16(l, start_char_idx));
+            .map_or(0, |l| byte_offset_to_utf16(l, start_byte));
         let end_utf16 = lines
             .get(end_line)
-            .map_or(0, |l| char_idx_to_utf16(l, end_char_idx));
+            .map_or(0, |l| byte_offset_to_utf16(l, end_byte));
 
-        TextEdit {
+        Ok(TextEdit {
             range: Range {
                 start: Position {
                     line: start_line as u32,
@@ -93,17 +83,17 @@ pub fn fix_to_text_edit(fix: &Fix, content: &str) -> TextEdit {
                 },
             },
             new_text: fix.replacement.clone(),
-        }
+        })
     }
 }
 
 /// Build a `TextEdit` that replaces the entire document with `formatted`.
 ///
-/// The end range is `(line_count, 0)` — the start of the line after the last,
-/// which captures any trailing newline.
+/// The end position is the actual EOF, including when the last line has no newline.
 #[allow(clippy::cast_possible_truncation)] // LSP positions are u32; line counts in real files fit
 pub fn whole_doc_edit(content: &str, formatted: &str) -> TextEdit {
-    let line_count = content.lines().count() as u32;
+    let line_count = content.bytes().filter(|&byte| byte == b'\n').count() as u32;
+    let last_line = content.rsplit('\n').next().unwrap_or_default();
     TextEdit {
         range: Range {
             start: Position {
@@ -112,7 +102,7 @@ pub fn whole_doc_edit(content: &str, formatted: &str) -> TextEdit {
             },
             end: Position {
                 line: line_count,
-                character: 0,
+                character: byte_offset_to_utf16(last_line, last_line.len()),
             },
         },
         new_text: formatted.to_owned(),
@@ -167,14 +157,70 @@ mod tests {
 
     #[test]
     fn test_coord_utf16() {
-        // Line contains a 2-code-unit emoji (U+1F600 = 😀).
-        // Content: "😀bc" — char 0 is emoji (2 UTF-16 units), char 1 is 'b', char 2 is 'c'.
-        // mdlint col 3 (1-indexed) = char index 2 = 'c'.
-        // UTF-16 offset: 2 (emoji) + 1 (b) = 3.
+        // Byte column 6 points to 'c', after the four-byte emoji and 'b'.
         let content = "\u{1F600}bc\n";
-        let v = make_violation(1, Some(3));
+        let v = make_violation(1, Some(6));
         let diag = violation_to_diagnostic(&v, content);
         assert_eq!(diag.range.start.character, 3);
+    }
+
+    #[test]
+    fn fix_edits_replace_the_complete_range() {
+        for (content, column_start, column_end, replacement, expected) in [
+            ("é😀   \n", Some(7), Some(9), "", "é😀\n"),
+            ("é __😀__\n", Some(4), Some(5), "**", "é **😀__\n"),
+            ("é\nnext\n", None, None, "new", "new\nnext\n"),
+            ("é\r\nnext\r\n", None, None, "new", "new\r\nnext\r\n"),
+            ("é\nnext\n", None, None, "", "next\n"),
+            ("é", None, None, "é\n", "é\n"),
+        ] {
+            let fix = Fix {
+                line_start: 1,
+                line_end: 1,
+                column_start,
+                column_end,
+                replacement: replacement.to_owned(),
+                description: "test".to_owned(),
+            };
+            let edit = fix_to_text_edit(&fix, content).unwrap();
+            let actual = apply_edit(content, &edit);
+            assert_eq!(actual, expected);
+        }
+    }
+
+    fn byte_offset(content: &str, position: Position) -> usize {
+        let mut offset = 0;
+        for (index, line) in content.split('\n').enumerate() {
+            if index == position.line as usize {
+                let mut utf16 = 0;
+                for (byte, ch) in line.char_indices() {
+                    if utf16 == position.character {
+                        return offset + byte;
+                    }
+                    utf16 += u32::try_from(ch.len_utf16()).unwrap();
+                }
+                assert_eq!(utf16, position.character);
+                return offset + line.len();
+            }
+            offset += line.len() + 1;
+        }
+        panic!("position outside document: {position:?}");
+    }
+
+    fn apply_edit(content: &str, edit: &TextEdit) -> String {
+        let start = byte_offset(content, edit.range.start);
+        let end = byte_offset(content, edit.range.end);
+        let mut result = content.to_owned();
+        result.replace_range(start..end, &edit.new_text);
+        result
+    }
+
+    #[test]
+    fn whole_document_ranges_end_at_the_actual_eof() {
+        for content in ["", "é😀", "é😀\n", "é😀\r\n", "a\nb"] {
+            let edit = whole_doc_edit(content, "replacement\n");
+            assert_eq!(apply_edit(content, &edit), "replacement\n");
+        }
     }
 
     #[test]
