@@ -119,6 +119,16 @@ fn default_checks_do_not_enforce_optional_document_policies() {
 }
 
 #[test]
+fn default_list_indentation_check_accepts_wide_ordered_parents() {
+    let content =
+        mdlint::formatter::format("# Title\n\n12. First. Next.\n    - Child. Again.\n\n1. Last.\n");
+    let violations = LintEngine::new(Config::default())
+        .lint_content(&content)
+        .unwrap();
+    assert!(violations.is_empty(), "{content}\n{violations:?}");
+}
+
+#[test]
 fn optional_policies_still_accept_explicit_configuration() {
     for (rule, content, settings) in [
         (
