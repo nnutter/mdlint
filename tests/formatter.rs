@@ -273,6 +273,14 @@ fn ordered_lists_use_stable_markers_and_preserve_the_start() {
 }
 
 #[test]
+fn ordered_marker_width_controls_nested_list_indentation() {
+    assert_formats_to(
+        "12. parent\n    - child\n      continuation\n",
+        "12. parent\n    - child\n      continuation\n",
+    );
+}
+
+#[test]
 fn ordered_list_preserved() {
     let input = "1. First\n1. Second\n1. Third\n";
     assert_formats_to(input, input);
