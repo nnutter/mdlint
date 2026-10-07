@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub(crate) const OPT_IN_RULES: &[&str] = &["MD013", "MD026", "MD033", "MD041", "MD043"];
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[allow(clippy::struct_excessive_bools)] // config struct mirrors TOML fields 1:1; bools are the right representation
 pub struct Config {
@@ -8,7 +10,7 @@ pub struct Config {
     #[serde(default)]
     pub rules: HashMap<String, RuleConfig>,
 
-    /// Enable all rules by default
+    /// Enable the default rule profile; explicit rule settings override it.
     #[serde(default = "default_default_enabled")]
     pub default_enabled: bool,
 
@@ -89,11 +91,19 @@ impl Config {
     /// `ignore` unconditionally force-disables the listed rules, overriding both the config
     /// file and `--select`.
     ///
-    /// Empty `select`/`ignore` is a no-op.
+    /// `ALL` enables the default profile and opts into optional rules, retaining
+    /// explicit rule settings. Empty `select`/`ignore` is a no-op.
     #[must_use]
     pub fn apply_rule_filters(mut self, select: &[String], ignore: &[String]) -> Self {
         let select_all = select.iter().any(|code| code.eq_ignore_ascii_case("all"));
-        if !select.is_empty() && !select_all {
+        if select_all {
+            self.default_enabled = true;
+            for rule in OPT_IN_RULES {
+                self.rules
+                    .entry((*rule).to_owned())
+                    .or_insert(RuleConfig::Enabled(true));
+            }
+        } else if !select.is_empty() {
             self.default_enabled = false;
             for code in select {
                 self.rules
@@ -134,10 +144,13 @@ mod tests {
     }
 
     #[test]
-    fn select_all_is_noop() {
+    fn select_all_enables_optional_checks() {
         let config = Config::default().apply_rule_filters(&["ALL".to_owned()], &[]);
-        assert!(config.default_enabled);
-        assert!(config.rules.is_empty());
+        let content = format!("{}\n", "word ".repeat(30));
+        let violations = crate::lint::LintEngine::new(config)
+            .lint_content(&content)
+            .unwrap();
+        assert!(violations.iter().any(|v| v.rule == "MD013"));
     }
 
     #[test]

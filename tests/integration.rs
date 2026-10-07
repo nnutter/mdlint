@@ -13,10 +13,7 @@ fn fixture(path: &str) -> String {
 }
 
 fn all_rules_engine() -> LintEngine {
-    LintEngine::new(Config {
-        default_enabled: true,
-        ..Config::default()
-    })
+    LintEngine::new(Config::default().apply_rule_filters(&["ALL".to_owned()], &[]))
 }
 
 // ── Format workflow tests ─────────────────────────────────────────────────────
@@ -92,6 +89,77 @@ fn check_fix_removes_trailing_spaces() {
             Some text
             More text
         "}
+    );
+}
+
+#[test]
+fn default_checks_do_not_enforce_optional_document_policies() {
+    let content = format!(
+        "## Why!\n\n<div>HTML</div>\n\n{}\n",
+        "Long prose ".repeat(30)
+    );
+    for config in [
+        Config::default(),
+        toml::from_str::<Config>("fix = false").unwrap(),
+    ] {
+        let violations = LintEngine::new(config).lint_content(&content).unwrap();
+        assert!(violations.iter().all(|v| !matches!(
+            v.rule.as_str(),
+            "MD013" | "MD026" | "MD033" | "MD041" | "MD043"
+        )));
+    }
+    let selected = Config::default().apply_rule_filters(&["ALL".to_owned()], &[]);
+    assert!(
+        LintEngine::new(selected)
+            .lint_content(&content)
+            .unwrap()
+            .iter()
+            .any(|v| v.rule == "MD013")
+    );
+}
+
+#[test]
+fn optional_policies_still_accept_explicit_configuration() {
+    for (rule, content, settings) in [
+        (
+            "MD013",
+            "A sentence longer than the configured limit.\n",
+            "line_length = 10",
+        ),
+        ("MD026", "# Why!\n", "enabled = true"),
+        ("MD033", "<div>HTML</div>\n", "enabled = true"),
+        ("MD041", "A document fragment.\n", "enabled = true"),
+        ("MD043", "# Actual\n", "headings = [\"Required\"]"),
+    ] {
+        let config: Config = toml::from_str(&format!(
+            "default_enabled = false\n[rules.{rule}]\n{settings}\n"
+        ))
+        .unwrap();
+        assert!(
+            LintEngine::new(config)
+                .lint_content(content)
+                .unwrap()
+                .iter()
+                .any(|v| v.rule == rule),
+            "{rule}"
+        );
+    }
+}
+
+#[test]
+fn default_checks_allow_code_tabs_and_headings_in_separate_sections() {
+    let config =
+        Config::default().apply_rule_filters(&["MD010".to_owned(), "MD024".to_owned()], &[]);
+    let engine = LintEngine::new(config);
+    let content =
+        "## One\n\n### Examples\n\n## Two\n\n### Examples\n\n```text\nfirst\nsecond\tline\n```\n";
+    assert!(engine.lint_content(content).unwrap().is_empty());
+    assert!(
+        engine
+            .lint_content("Text\twith a tab\n")
+            .unwrap()
+            .iter()
+            .any(|v| v.rule == "MD010")
     );
 }
 
@@ -197,7 +265,7 @@ fn check_fix_replaces_hard_tabs() {
     let content = indoc! {"
         # Heading
 
-        \tTabbed line
+        Text\tTabbed line
     "};
     let engine = all_rules_engine();
     let violations = engine.lint_content(content).unwrap();
@@ -265,14 +333,13 @@ fn check_clean_file_has_no_violations() {
 
 #[test]
 fn select_restricts_check_to_named_rule() {
-    // Line has both a heading-level skip (MD001) and a hard tab (MD010); --select MD001
-    // should report only MD001.
+    // Line has both a heading-level skip (MD001) and a prose tab (MD010).
     let content = indoc! {"
         # Heading
 
         ### Skipped level
 
-        \tTabbed line
+        Text\tTabbed line
     "};
     let config = Config::default().apply_rule_filters(&["MD001".to_owned()], &[]);
     let violations = LintEngine::new(config).lint_content(content).unwrap();
@@ -287,7 +354,7 @@ fn ignore_excludes_named_rule_only() {
 
         ### Skipped level
 
-        \tTabbed line
+        Text\tTabbed line
     "};
     let config = Config::default().apply_rule_filters(&[], &["MD010".to_owned()]);
     let violations = LintEngine::new(config).lint_content(content).unwrap();
@@ -297,7 +364,7 @@ fn ignore_excludes_named_rule_only() {
 
 #[test]
 fn ignore_overrides_config_file_enabling_the_rule() {
-    let content = "\tTabbed line\n";
+    let content = "Text\tTabbed line\n";
     let mut config = Config::default();
     config
         .rules

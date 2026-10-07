@@ -62,8 +62,9 @@ impl LintEngine {
                 Some(json_value)
             }
             None => {
-                // If default_enabled is true and no specific config exists, enable the rule
-                if self.config.default_enabled {
+                if self.config.default_enabled
+                    && !crate::config::OPT_IN_RULES.contains(&rule.name())
+                {
                     None
                 } else {
                     return Vec::new();
@@ -209,10 +210,7 @@ mod tests {
     use indoc::indoc;
 
     fn engine_all_rules() -> LintEngine {
-        LintEngine::new(Config {
-            default_enabled: true,
-            ..Config::default()
-        })
+        LintEngine::new(Config::default().apply_rule_filters(&["ALL".to_owned()], &[]))
     }
 
     #[test]
@@ -286,11 +284,12 @@ mod tests {
             <!-- mdlint-disable MD041 -->
             No heading here
         "};
-        let engine = LintEngine::new(Config {
-            default_enabled: true,
+        let config = Config {
             no_inline_config: true,
             ..Config::default()
-        });
+        }
+        .apply_rule_filters(&["ALL".to_owned()], &[]);
+        let engine = LintEngine::new(config);
         let violations = engine.lint_content(content).unwrap();
         // With no_inline_config, the directive is ignored — MD041 should still fire
         assert!(

@@ -24,7 +24,7 @@ impl Rule for MD024 {
         let siblings_only = config
             .and_then(|c| c.get("siblings_only"))
             .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
+            .unwrap_or(true);
 
         let mut violations = Vec::new();
         let mut heading_texts: HashMap<String, (usize, HeadingLevel)> = HashMap::new();
@@ -141,7 +141,8 @@ mod tests {
             # Heading"};
         let parser = MarkdownParser::new(content);
         let rule = MD024;
-        let violations = rule.check(&parser, None);
+        let config = serde_json::json!({"siblings_only": false});
+        let violations = rule.check(&parser, Some(&config));
 
         assert_eq!(
             rendered(&violations),
@@ -243,7 +244,7 @@ mod tests {
         assert_eq!(
             rendered(&violations),
             [
-                "test.md:5:1: MD024 Multiple headings with the same content: \"`mdlint check`\" (first at line 1)"
+                "test.md:5:1: MD024 Multiple sibling headings with the same content: \"`mdlint check`\" (first at line 1)"
             ],
             "Same code headings should be duplicates"
         );
