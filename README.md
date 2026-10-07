@@ -23,6 +23,7 @@ Run `mdlint format` and stop thinking about it.
 - **Fast**: written in Rust for performance
 - **Portable**: single, small, 0-dependency binary (Linux x86_64/ARM64, macOS Intel/Apple Silicon, Windows)
 - **Git-aware**: respects `.gitignore` files by default
+- **Git-friendly style**: stable list markers, compact tables, preserved references, and conservative sentence breaks keep content edits local
 
 ## Quickstart
 
@@ -137,6 +138,24 @@ Options:
   -h, --help                       Print help
 ```
 
+### Formatter style for useful diffs
+
+Formatting favors small, understandable Git diffs without changing Markdown meaning.
+
+- **Prose:** Add conservative sentence-oriented soft breaks, without a column limit or width-based reflow.
+  Preserve existing clause breaks and hard line breaks; leave ambiguous boundaries alone.
+- **Ordered lists:** Keep the first number, including an intentional non-1 start, and use `1.` for later items.
+  Inserting an item must not renumber the remaining list.
+- **References:** Preserve inline, full-reference, collapsed-reference, and shortcut links and images.
+  Keep descriptive labels and definition order; never generate sequential labels or convert every link to a reference.
+- **Tables:** Use compact rows without column-width padding, while preserving alignment semantics.
+  Widening one cell must not resize unrelated rows.
+- **Code:** Preserve content whitespace, tabs, and repeated blank lines.
+  Choose fences that cannot terminate on the code itself, including tilde fences when the info string contains backticks.
+- **Emphasis:** Prefer asterisks, but retain underscores when needed to keep adjacent spans separate or preserve reference identity.
+
+See [FORMAT_SPEC.md](FORMAT_SPEC.md) for the complete style contract and correctness exceptions.
+
 ### mdlint migrate
 
 Migrate a configuration from another Markdown tool to `mdlint.toml`. Currently supported sources (`--from`):
@@ -185,8 +204,8 @@ mdlint check --output-format json
 # enable only specific rules
 mdlint check --select MD001,MD022
 
-# disable specific rules for this run
-mdlint check --ignore MD013,MD033
+# disable specific default-enabled rules for this run
+mdlint check --ignore MD025,MD040
 
 # format all files
 mdlint format
@@ -230,11 +249,23 @@ arrays are extended. Priority order (highest to lowest):
 3. Config files in parent directories (walking up to the filesystem root)
 4. Built-in defaults
 
+### Default lint profile
+
+The default profile avoids document policies that cause unnecessary edits or reject valid Markdown fragments.
+MD013 (line length), MD026 (heading punctuation), MD033 (HTML), MD041 (required top-level title), and MD043 (heading templates) are disabled by default.
+MD024 checks duplicate headings only within the same parent section.
+MD009, MD010, and MD012 leave code whitespace unchanged by default.
+MD060 allows independent table and column alignments.
+
+Opt into optional rules with an explicit rule section or `--select MD013`, for example.
+`--select ALL` opts into all rules while retaining explicit rule settings, including explicit disables.
+Formatter style is not configurable; lint rule overrides remain available for project-specific checks.
+
 ### Global options
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `default_enabled` | `true` | Enable all rules unless explicitly disabled; `false` to enable only configured rules. |
+| `default_enabled` | `true` | Enable the default lint profile; explicit rule settings override it. Use `false` to enable only configured rules. |
 | `gitignore` | `true` | Respect `.gitignore` files when discovering Markdown files. |
 | `no_inline_config` | `false` | Ignore all `<!-- mdlint-disable -->` comments. |
 | `fix` | `true` | `mdlint check` automatically applies all fixable violations; equivalent to passing `--fix` on the CLI. |
@@ -244,12 +275,14 @@ arrays are extended. Priority order (highest to lowest):
 
 ### Rule configuration
 
-Each rule is configured in its own `[rules.MDxxx]` section. Providing any parameter enables the rule. Use
-`enabled = false` to explicitly disable a rule when `default_enabled = true`.
+Each rule is configured in its own `[rules.MDxxx]` section.
+Providing parameters enables the rule unless that section also sets `enabled = false`.
+Use `enabled = false` to disable a rule regardless of the profile.
+Rule parameters do not configure the formatter.
 
 ```toml
-# disable a rule
-[rules.MD013]
+# disable a default-enabled rule
+[rules.MD040]
 enabled = false
 
 # configure parameters (also enables the rule)
@@ -267,7 +300,8 @@ See [`mdlint.default.toml`](mdlint.default.toml) for every option with its defau
 
 ### Inline configuration
 
-Rules can be suppressed for specific lines using HTML comments:
+Rules can be suppressed for specific lines using HTML comments.
+These directives suppress already-enabled rules; they do not enable optional policies.
 
 ```markdown
 <!-- mdlint-disable-next-line MD013 -->
@@ -303,7 +337,9 @@ Rules marked ✓ in the **Fix** column are auto-corrected by `mdlint check --fix
 are reported by `mdlint check` only and require manual correction. **Default** shows mdlint's configured default for
 the rule's key parameter(s); **markdownlint** shows the
 [original markdownlint](https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md) default where it differs from
-mdlint's. `—` means the rule has no configurable parameters.
+mdlint's.
+`off` marks optional policies disabled by default; their parameter defaults are documented in `mdlint.default.toml`.
+`—` means the rule has no configurable parameters.
 
 | Rule | Fix | Default | markdownlint | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -311,12 +347,12 @@ mdlint's. `—` means the rule has no configurable parameters.
 | [MD003](https://github.com/DavidAnson/markdownlint/blob/main/doc/md003.md) |  | `atx` | `consistent` | Heading style should be consistent throughout the document | Config: `style` — `atx` (`# Heading`), `setext`, `atx_closed`, `consistent` |
 | [MD004](https://github.com/DavidAnson/markdownlint/blob/main/doc/md004.md) | ✓ | `dash` | `consistent` | Unordered list style should be consistent | Config: `style` — `dash`, `asterisk`, `plus`, `consistent` |
 | [MD005](https://github.com/DavidAnson/markdownlint/blob/main/doc/md005.md) |  | — | — | Inconsistent indentation for list items at the same level | Catches copy-paste errors where sibling items have different indentation |
-| [MD007](https://github.com/DavidAnson/markdownlint/blob/main/doc/md007.md) |  | `indent: 2` |  | Unordered list indentation | Config: `indent` — spaces per nesting level |
-| [MD009](https://github.com/DavidAnson/markdownlint/blob/main/doc/md009.md) | ✓ | `br_spaces: 2` |  | Trailing spaces | Two trailing spaces mean a hard line break; format converts them to `\` syntax. Config: `br_spaces`, `strict` |
-| [MD010](https://github.com/DavidAnson/markdownlint/blob/main/doc/md010.md) | ✓ | `code_blocks: true` |  | Hard tabs | Tabs render inconsistently across editors; format replaces with spaces. Config: `code_blocks` |
+| [MD007](https://github.com/DavidAnson/markdownlint/blob/main/doc/md007.md) |  | `indent: 2` |  | Unordered list indentation | Config: `indent` — spaces under unordered parents; ordered parents use their marker width |
+| [MD009](https://github.com/DavidAnson/markdownlint/blob/main/doc/md009.md) | ✓ | `br_spaces: 2, code_blocks: false` |  | Trailing spaces | Preserve code whitespace by default. Two trailing spaces mean a hard line break; format converts them to `\` syntax. Config: `br_spaces`, `strict`, `code_blocks` |
+| [MD010](https://github.com/DavidAnson/markdownlint/blob/main/doc/md010.md) | ✓ | `code_blocks: false` | `code_blocks: true` | Hard tabs | Check prose tabs without changing code blocks by default. Config: `code_blocks` |
 | [MD011](https://github.com/DavidAnson/markdownlint/blob/main/doc/md011.md) |  | — | — | Reversed link syntax | Catches the common typo of swapped parentheses and brackets; should always be enabled |
 | [MD012](https://github.com/DavidAnson/markdownlint/blob/main/doc/md012.md) | ✓ | `maximum: 1` |  | Multiple consecutive blank lines | Config: `maximum` — max consecutive blank lines allowed |
-| [MD013](https://github.com/DavidAnson/markdownlint/blob/main/doc/md013.md) |  | `line: 120, heading: 80` | `line: 80` | Line length | mdlint raises the line limit to 120 to better fit URLs and long identifiers. Config: `line_length`, `heading_line_length`, `code_blocks`, `tables`, `headings` |
+| [MD013](https://github.com/DavidAnson/markdownlint/blob/main/doc/md013.md) |  | `off` | `line: 80` | Line length | Opt-in width limits; no width-based prose reflow. Config: `line_length`, `heading_line_length`, `code_blocks`, `tables`, `headings` |
 | [MD014](https://github.com/DavidAnson/markdownlint/blob/main/doc/md014.md) | ✓ | — | — | Dollar signs used before commands without showing output | `$`-prefixed shell commands cannot be copy-pasted; omit the `$` prompt |
 | [MD018](https://github.com/DavidAnson/markdownlint/blob/main/doc/md018.md) | ✓ | — | — | No space after hash on atx style heading | `#Title` renders inconsistently; format inserts the required space |
 | [MD019](https://github.com/DavidAnson/markdownlint/blob/main/doc/md019.md) | ✓ | — | — | Multiple spaces after hash on atx style heading | `#  Title` → `# Title`; format normalises to one space |
@@ -324,16 +360,16 @@ mdlint's. `—` means the rule has no configurable parameters.
 | [MD021](https://github.com/DavidAnson/markdownlint/blob/main/doc/md021.md) | ✓ | — | — | Multiple spaces inside hashes on closed atx style heading | Only relevant if using `#Title#` style headings |
 | [MD022](https://github.com/DavidAnson/markdownlint/blob/main/doc/md022.md) | ✓ | — | — | Headings should be surrounded by blank lines | Required by many renderers for correct parsing; format inserts blank lines |
 | [MD023](https://github.com/DavidAnson/markdownlint/blob/main/doc/md023.md) | ✓ | — | — | Headings must start at the beginning of the line | Indented headings are treated as code or paragraphs in CommonMark |
-| [MD024](https://github.com/DavidAnson/markdownlint/blob/main/doc/md024.md) |  | `siblings_only: false` |  | Multiple headings with the same content | Config: `siblings_only` — set `true` to flag only duplicates within the same parent heading |
+| [MD024](https://github.com/DavidAnson/markdownlint/blob/main/doc/md024.md) |  | `siblings_only: true` | `siblings_only: false` | Multiple headings with the same content | Allow repeated headings in different sections. Config: `siblings_only` |
 | [MD025](https://github.com/DavidAnson/markdownlint/blob/main/doc/md025.md) |  | — | — | Multiple top-level headings in the same document | Disable for document fragments that intentionally lack a single top-level title |
-| [MD026](https://github.com/DavidAnson/markdownlint/blob/main/doc/md026.md) |  | `".,;:!?。，；：！？"` | `".,;:!。，；：！"` | Trailing punctuation in heading | Headings are labels, not sentences. mdlint additionally disallows `?`. Config: `punctuation` |
+| [MD026](https://github.com/DavidAnson/markdownlint/blob/main/doc/md026.md) |  | `off` | `".,;:!。，；：！"` | Trailing punctuation in heading | Opt-in punctuation policy; question headings are allowed by default. Config: `punctuation` |
 | [MD027](https://github.com/DavidAnson/markdownlint/blob/main/doc/md027.md) | ✓ | — | — | Multiple spaces after blockquote symbol | `>  text` → `> text`; format normalises |
 | [MD028](https://github.com/DavidAnson/markdownlint/blob/main/doc/md028.md) |  | — | — | Blank line inside blockquote | Blank lines split blockquotes into separate elements in CommonMark; may be intentional |
-| [MD029](https://github.com/DavidAnson/markdownlint/blob/main/doc/md029.md) | ✓ | `ordered` | `one_or_ordered` | Ordered list item prefix | mdlint requires sequential numbering. Config: `style` — `ordered` (1. 2. 3.), `one` (all 1s), `one_or_ordered` |
+| [MD029](https://github.com/DavidAnson/markdownlint/blob/main/doc/md029.md) | ✓ | `one` | `one_or_ordered` | Ordered list item prefix | Preserve the first number and use `1.` for subsequent items. Config: `style` — `ordered` (1. 2. 3.), `one` (first number, then 1s), `one_or_ordered` |
 | [MD030](https://github.com/DavidAnson/markdownlint/blob/main/doc/md030.md) | ✓ | `all: 1` |  | Spaces after list markers | Config: `ul_single`, `ul_multi`, `ol_single`, `ol_multi` — spaces after marker per context |
 | [MD031](https://github.com/DavidAnson/markdownlint/blob/main/doc/md031.md) | ✓ | — | — | Fenced code blocks should be surrounded by blank lines | Some renderers require blank lines around fences to parse correctly |
 | [MD032](https://github.com/DavidAnson/markdownlint/blob/main/doc/md032.md) |  | — | — | Lists should be surrounded by blank lines | Consistent blank lines around lists improve rendering across processors |
-| [MD033](https://github.com/DavidAnson/markdownlint/blob/main/doc/md033.md) |  | `allowed_elements: []` |  | Inline HTML | HTML reduces portability. Config: `allowed_elements` — add e.g. `["details", "summary"]` |
+| [MD033](https://github.com/DavidAnson/markdownlint/blob/main/doc/md033.md) |  | `off` | `allowed_elements: []` | Inline HTML | HTML is allowed by default; restrictions are opt-in. Config: `allowed_elements` — add e.g. `["details", "summary"]` |
 | [MD034](https://github.com/DavidAnson/markdownlint/blob/main/doc/md034.md) |  | — | — | Bare URL used | Plain URLs don't render as links in all Markdown processors; use `[text](url)` |
 | [MD035](https://github.com/DavidAnson/markdownlint/blob/main/doc/md035.md) | ✓ | `---` | `consistent` | Horizontal rule style | Config: `style` — `---`, `***`, `___`, `consistent` |
 | [MD036](https://github.com/DavidAnson/markdownlint/blob/main/doc/md036.md) |  | `".,;:!?。，；：！？"` |  | Emphasis used instead of a heading | Bold/italic-only lines won't appear in a table of contents. Config: `punctuation` |
@@ -341,16 +377,16 @@ mdlint's. `—` means the rule has no configurable parameters.
 | [MD038](https://github.com/DavidAnson/markdownlint/blob/main/doc/md038.md) |  | — | — | Spaces inside code span elements | `` ` text ` `` is technically valid but inconsistent with expected style |
 | [MD039](https://github.com/DavidAnson/markdownlint/blob/main/doc/md039.md) |  | — | — | Spaces inside link text | `[ text ]` is valid but inconsistent |
 | [MD040](https://github.com/DavidAnson/markdownlint/blob/main/doc/md040.md) |  | — | — | Fenced code blocks should have a language specified | Language tags enable syntax highlighting. Config: `allowed_languages` |
-| [MD041](https://github.com/DavidAnson/markdownlint/blob/main/doc/md041.md) |  | `level: 1` |  | First line in file should be a top-level heading | Disable for files starting with badges, front matter, or that are document fragments |
+| [MD041](https://github.com/DavidAnson/markdownlint/blob/main/doc/md041.md) |  | `off` | `level: 1` | First line in file should be a top-level heading | Opt in to require a title; fragments and badge-first documents are allowed by default |
 | [MD042](https://github.com/DavidAnson/markdownlint/blob/main/doc/md042.md) |  | — | — | No empty links | `[text]()` is almost always a mistake |
-| [MD043](https://github.com/DavidAnson/markdownlint/blob/main/doc/md043.md) |  | — | — | Required heading structure | Useful for template-driven documentation; too restrictive for most projects. Config: `headings` |
+| [MD043](https://github.com/DavidAnson/markdownlint/blob/main/doc/md043.md) |  | `off` | — | Required heading structure | Opt-in heading templates. Config: `headings` |
 | [MD044](https://github.com/DavidAnson/markdownlint/blob/main/doc/md044.md) |  | `names: []` |  | Proper names should have the correct capitalization | Requires configuration to be useful. Config: `names`, `code_blocks` |
 | [MD045](https://github.com/DavidAnson/markdownlint/blob/main/doc/md045.md) |  | — | — | Images should have alternate text (alt text) | Alt text is required for accessibility; screen readers depend on it |
 | [MD046](https://github.com/DavidAnson/markdownlint/blob/main/doc/md046.md) |  | `fenced` | `consistent` | Code block style | Config: `style` — `fenced`, `indented`, `consistent` |
 | [MD047](https://github.com/DavidAnson/markdownlint/blob/main/doc/md047.md) | ✓ | — | — | Files should end with a single newline character | POSIX standard; prevents "no newline at end of file" noise in git diffs |
-| [MD048](https://github.com/DavidAnson/markdownlint/blob/main/doc/md048.md) |  | `backtick` | `consistent` | Code fence style | Config: `style` — `backtick`, `tilde`, `consistent` |
-| [MD049](https://github.com/DavidAnson/markdownlint/blob/main/doc/md049.md) | ✓ | `asterisk` | `consistent` | Emphasis style should be consistent | Config: `style` — `asterisk`, `underscore`, `consistent` |
-| [MD050](https://github.com/DavidAnson/markdownlint/blob/main/doc/md050.md) | ✓ | `asterisk` | `consistent` | Strong style should be consistent | Config: `style` — `asterisk`, `underscore`, `consistent` |
+| [MD048](https://github.com/DavidAnson/markdownlint/blob/main/doc/md048.md) |  | `backtick` | `consistent` | Code fence style | Safe tilde fences are accepted when the info string contains backticks. Config: `style` — `backtick`, `tilde`, `consistent` |
+| [MD049](https://github.com/DavidAnson/markdownlint/blob/main/doc/md049.md) | ✓ | `asterisk` | `consistent` | Emphasis style should be consistent | Accept underscores needed for adjacent spans or reference identity. Config: `style` — `asterisk`, `underscore`, `consistent` |
+| [MD050](https://github.com/DavidAnson/markdownlint/blob/main/doc/md050.md) | ✓ | `asterisk` | `consistent` | Strong style should be consistent | Accept underscores needed for adjacent spans or reference identity. Config: `style` — `asterisk`, `underscore`, `consistent` |
 | [MD051](https://github.com/DavidAnson/markdownlint/blob/main/doc/md051.md) |  | — | — | Link fragments should be valid | Broken `#anchor` links are invisible to parsers but silently break in-page navigation |
 | [MD052](https://github.com/DavidAnson/markdownlint/blob/main/doc/md052.md) |  | — | — | Reference links and images should use a label that is defined | Undefined reference links silently render as plain text instead of a link |
 | [MD053](https://github.com/DavidAnson/markdownlint/blob/main/doc/md053.md) |  | — | — | Link and image reference definitions should be needed | Cleans up leftover link definitions after references are removed |
@@ -359,7 +395,7 @@ mdlint's. `—` means the rule has no configurable parameters.
 | [MD056](https://github.com/DavidAnson/markdownlint/blob/main/doc/md056.md) |  | — | — | Table column count | Mismatched column counts cause unpredictable table rendering across processors |
 | [MD058](https://github.com/DavidAnson/markdownlint/blob/main/doc/md058.md) |  | — | — | Tables should be surrounded by blank lines | Blank lines ensure tables are consistently parsed across Markdown processors |
 | [MD059](https://github.com/DavidAnson/markdownlint/blob/main/doc/md059.md) |  | — | — | Link text should be descriptive | "click here" and "read more" are inaccessible; use meaningful link text |
-| [MD060](https://github.com/DavidAnson/markdownlint/blob/main/doc/md060.md) |  | `consistent` | `any` | Table column style | mdlint requires a consistent alignment choice. Config: `style` — `consistent`, `default`, `left`, `right`, `center` |
+| [MD060](https://github.com/DavidAnson/markdownlint/blob/main/doc/md060.md) |  | `any` |  | Table column style | Preserve independent alignments by default. Config: `style` — `any`, `consistent`, `default`, `left`, `right`, `center` |
 
 ## Contributing
 
