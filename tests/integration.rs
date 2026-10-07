@@ -147,9 +147,9 @@ fn emphasis_fixes_do_not_change_reference_identities() {
             .iter()
             .filter_map(|v| v.fix.clone())
             .collect();
-        let fixed = Fixer::new().apply_fixes_to_content(&input, &fixes).unwrap();
-        assert_eq!(fixed, expected);
-        assert!(engine.lint_content(&fixed).unwrap().is_empty());
+        let corrected = Fixer::new().apply_fixes_to_content(&input, &fixes).unwrap();
+        assert_eq!(corrected, expected);
+        assert!(engine.lint_content(&corrected).unwrap().is_empty());
         if style == "asterisk" {
             assert_eq!(mdlint::formatter::format(&input), expected);
         }
