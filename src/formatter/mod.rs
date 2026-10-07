@@ -229,6 +229,10 @@ impl FormatterState {
                 // the item marker was already written.
                 if self.list_depth == 0 {
                     self.emit_blank_if_needed();
+                } else if !self.in_tight_item {
+                    self.emit_blank_if_needed();
+                    self.write_bq_prefix();
+                    self.out.push_str(&self.list_continuation_prefix());
                 }
                 self.in_tight_item = false;
             }
@@ -379,7 +383,7 @@ impl FormatterState {
                     if self.list_depth == 0 {
                         self.write_bq_prefix();
                     }
-                    let prefix = "  ".repeat(self.list_depth);
+                    let prefix = self.list_continuation_prefix();
                     self.flush_inline_text(&text, &prefix);
                     self.needs_blank = true;
                 }
