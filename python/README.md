@@ -10,7 +10,8 @@ An opinionated Markdown formatter and linter, written in Rust.
 
 What [ruff](https://github.com/astral-sh/ruff/) did for Python and [gofmt](https://pkg.go.dev/cmd/gofmt) did for Go,
 `mdlint` aims to do for Markdown: enforce a single, consistent canonical style so that style debates disappear and diffs
-stay meaningful. As AI coding agents increasingly read and write Markdown, well-structured files matter more than ever.
+stay meaningful.
+As AI coding agents increasingly read and write Markdown, well-structured files matter more than ever.
 Run `mdlint format` and stop thinking about it.
 
 **Project Status**: Active development, but no one's top priority.
@@ -37,7 +38,8 @@ uvx markdownlint-rs format  # format all Markdown files in the current directory
 ## Installation
 
 `mdlint` comes packaged in many forms: static binaries, from a Python wrapper, from an NPM wrapper, and in a Docker
-container! More ways of installing are in the works, but here's the current list:
+container!
+More ways of installing are in the works, but here's the current list:
 
 > :warning: **Be aware:** `mdlint` is the executable name, but most package names are still `markdownlint-rs`!
 
@@ -63,7 +65,8 @@ docker run --rm -v "$PWD:/workspace" simonswanson/mdlint:latest       format
 ```
 
 Pre-built binaries for Linux (x86_64/ARM64, glibc and musl), macOS (Intel/Apple Silicon), and Windows are available
-on the [releases page](https://github.com/swanysimon/mdlint/releases). A [Homebrew](https://brew.sh) formula is planned.
+on the [releases page](https://github.com/swanysimon/mdlint/releases).
+A [Homebrew](https://brew.sh) formula is planned.
 
 ### pre-commit framework
 
@@ -158,7 +161,8 @@ See [FORMAT_SPEC.md](https://github.com/swanysimon/mdlint/blob/main/FORMAT_SPEC.
 
 ### mdlint migrate
 
-Migrate a configuration from another Markdown tool to `mdlint.toml`. Currently supported sources (`--from`):
+Migrate a configuration from another Markdown tool to `mdlint.toml`.
+Currently supported sources (`--from`):
 `markdownlint-cli2` (default).
 
 ```text
@@ -179,11 +183,13 @@ Options:
 
 Supports `.markdownlint-cli2.{json,jsonc,yaml,yml}` and standalone `.markdownlint.{json,jsonc,yaml,yml}` rule
 configs, and falls back to the `"markdownlint-cli2"` field in `package.json` if no dedicated config file is found.
-Rule names and their common aliases (e.g. `line-length` for `MD013`) are both recognized. The `gitignore`,
+Rule names and their common aliases (e.g. `line-length` for `MD013`) are both recognized.
+The `gitignore`,
 `noInlineConfig`, and `frontMatterPattern` cli2 options map onto mdlint's equivalent `gitignore`, `no_inline_config`,
 and `front_matter` settings. `.cjs`/`.mjs` configs are evaluated with a Node.js runtime when one is found on `PATH`
 (the same thing `markdownlint-cli2` itself would do when loading them), correctly resolving `require()`, spread
-syntax, and computed values. If Node isn't available, mdlint falls back to a best-effort text scrape and warns that
+syntax, and computed values.
+If Node isn't available, mdlint falls back to a best-effort text scrape and warns that
 dynamic values may not have been resolved; if a config can't be parsed either way, migration fails with a message
 asking you to export it with `console.log(JSON.stringify(config))` and migrate the resulting JSON file instead.
 Rules with no mdlint implementation, and cli2-specific fields with no mdlint equivalent (`globs`, `customRules`,
@@ -231,23 +237,26 @@ mdlint migrate --from markdownlint-cli2 .markdownlint-cli2.jsonc --output mdlint
 
 ## Configuration
 
-mdlint uses TOML configuration files, discovered by searching upward from the current directory. The tool searches for
+mdlint uses TOML configuration files, discovered by searching upward from the current directory.
+The tool searches for
 these files in order (first found wins per directory level), walking up from the current directory:
 
 1. `mdlint.toml`
-2. `.mdlint.toml`
+1. `.mdlint.toml`
 
 Planned: `package.json` and `pyproject.toml` support.
 
 ### Configuration hierarchy
 
-Configs are discovered by walking up the directory tree. Scalar values from closer configs override those farther away;
-arrays are extended. Priority order (highest to lowest):
+Configs are discovered by walking up the directory tree.
+Scalar values from closer configs override those farther away;
+arrays are extended.
+Priority order (highest to lowest):
 
 1. `--config` flag on the CLI
-2. `mdlint.toml` / `.mdlint.toml` in the current directory
-3. Config files in parent directories (walking up to the filesystem root)
-4. Built-in defaults
+1. `mdlint.toml` / `.mdlint.toml` in the current directory
+1. Config files in parent directories (walking up to the filesystem root)
+1. Built-in defaults
 
 ### Default lint profile
 
@@ -320,7 +329,8 @@ This line may be longer than the configured limit.
 | `<!-- mdlint-disable -->` | Disable all rules from this line onward |
 | `<!-- mdlint-enable -->` | Re-enable all rules |
 
-Multiple rules: `<!-- mdlint-disable MD001 MD013 -->` — space-separate rule codes. Set `no_inline_config = true`
+Multiple rules: `<!-- mdlint-disable MD001 MD013 -->` — space-separate rule codes.
+Set `no_inline_config = true`
 in `mdlint.toml` to ignore all inline comments project-wide.
 
 ## Exit Codes
@@ -333,7 +343,8 @@ in `mdlint.toml` to ignore all inline comments project-wide.
 
 ## Rules
 
-Rules marked ✓ in the **Fix** column are auto-corrected by `mdlint check --fix` and `mdlint format`. Rules without ✓
+Rules marked ✓ in the **Fix** column are auto-corrected by `mdlint check --fix` and `mdlint format`.
+Rules without ✓
 are reported by `mdlint check` only and require manual correction. **Default** shows mdlint's configured default for
 the rule's key parameter(s); **markdownlint** shows the
 [original markdownlint](https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md) default where it differs from
@@ -403,7 +414,8 @@ Contributions are welcome!
 
 ### Development setup
 
-Prerequisites: [mise](https://mise.jdx.dev/) and [Rust](https://rustup.rs/). Optionally, Docker is needed for
+Prerequisites: [mise](https://mise.jdx.dev/) and [Rust](https://rustup.rs/).
+Optionally, Docker is needed for
 Dockerfile linting. [uv](https://docs.astral.sh/uv/) is required only if working on the Python package.
 
 ```bash
@@ -415,15 +427,16 @@ cargo build
 
 ### Code quality
 
-All quality checks run via `prek run -a`. This must pass before submitting a pull request.
+All quality checks run via `prek run -a`.
+This must pass before submitting a pull request.
 
 ### Pull request process
 
 1. Create a feature branch from `main`
-2. Make focused commits with clear messages
-3. Add tests for new functionality
-4. Run `prek run -a` and fix any failures
-5. Submit a PR with a description of what changed and why
+1. Make focused commits with clear messages
+1. Add tests for new functionality
+1. Run `prek run -a` and fix any failures
+1. Submit a PR with a description of what changed and why
 
 ### Release process
 

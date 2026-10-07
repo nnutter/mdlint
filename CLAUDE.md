@@ -5,7 +5,8 @@
 ## Project Philosophy
 
 mdlint is an **opinionated Markdown formatter** first, linter second — analogous to ruff or gofmt.
-The formatter (`mdlint format`) enforces a canonical style by rewriting files. The linter
+The formatter (`mdlint format`) enforces a canonical style by rewriting files.
+The linter
 (`mdlint check`) reports violations that fall outside what the formatter can fix automatically.
 
 Core principles: correctness over performance, type safety, minimal code, no duplication,
@@ -157,31 +158,35 @@ src/
 ### Adding a linting rule
 
 1. Create `src/lint/rules/mdXXX.rs` and implement the `Rule` trait
-  (`name`, `description`, `tags`, `check`). Return `true` from `fixable()`
-  if `mdlint format` enforces this rule.
-2. Register it in `create_default_registry()` in `src/lint/rules/mod.rs`
-3. Write tests in the same file — both a violation-detection test and a fix-application test
-  (see Testing Strategy: every transformation test must cover both modes)
+   (`name`, `description`, `tags`, `check`).
+   Return `true` from `fixable()`
+   if `mdlint format` enforces this rule.
+1. Register it in `create_default_registry()` in `src/lint/rules/mod.rs`
+1. Write tests in the same file — both a violation-detection test and a fix-application test
+   (see Testing Strategy: every transformation test must cover both modes)
 
 ### Adding a formatting behavior
 
 1. Document the style decision in `FORMAT_SPEC.md` first — it is the source of truth
-2. Implement in `src/formatter/mod.rs` by handling the relevant pulldown-cmark events
-3. Constraint: `format(format(x)) == format(x)` — idempotency is non-negotiable
-4. If the behavior maps to a lint rule, set `fixable() = true` and ensure `mdlint format`
-  and `mdlint check --fix` produce identical output for that rule
+1. Implement in `src/formatter/mod.rs` by handling the relevant pulldown-cmark events
+1. Constraint: `format(format(x)) == format(x)` — idempotency is non-negotiable
+1. If the behavior maps to a lint rule, set `fixable() = true` and ensure `mdlint format`
+   and `mdlint check --fix` produce identical output for that rule
 
 ### Adding a new platform
 
 Update all three in sync: `build-binaries.yml` (build the binary), `publish-npm.yml`
-(download + rename step), and `publish-python.yml` (platform loop). Also update the
+(download + rename step), and `publish-python.yml` (platform loop).
+Also update the
 supported platforms tables in `npm/README.md` and `python/README.md`.
 
 ### Keeping READMEs in sync
 
-`npm/README.md` and `python/README.md` mirror `README.md`. When editing any of them:
+`npm/README.md` and `python/README.md` mirror `README.md`.
+When editing any of them:
 
-- Copy changes to all three. The only intentional differences are the Installation section
+- Copy changes to all three.
+  The only intentional differences are the Installation section
   (package-manager specific), the "How it works" section (platform/binary table), and the
   Contributing section (package-specific build/release steps with a link to the main repo).
 - Relative links (e.g. `mdlint.default.toml`) become absolute GitHub URLs in the sub-package READMEs.
