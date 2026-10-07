@@ -18,6 +18,9 @@ fn markdown_documents() -> impl Strategy<Value = String> {
         word.prop_map(|text| format!("_{text}_*second*")),
         word.prop_map(|text| format!("[{text}](https://example.com \"title\") ![alt](image.png)")),
         word.prop_map(|text| format!("[{text}][label]\n\n[label]: https://example.com \"title\"")),
+        word.prop_map(|text| format!(
+            "A {text} paragraph\n[not-definition]: /literal\n\nRead [not-definition]."
+        )),
         word.prop_map(|text| format!("* {text}\n  + nested\n* second")),
         word.prop_map(|text| format!("* [ ] {text}\n* [x] second")),
         word.prop_map(|text| format!("~~{text}~~")),
