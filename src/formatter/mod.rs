@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
 use std::ops::Range;
 
-use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 
 /// Format a Markdown document to canonical style.
 ///
@@ -18,9 +18,11 @@ pub fn format(input: &str) -> String {
     }
 
     let mut state = FormatterState::new();
-    let events: Vec<_> = Parser::new_ext(input, mk_options())
-        .into_offset_iter()
-        .collect();
+    let parser = Parser::new_ext(input, mk_options());
+    let mut definitions = reference_definition_ranges(input, &parser)
+        .into_iter()
+        .peekable();
+    let events: Vec<_> = parser.into_offset_iter().collect();
     let mut code_fences = code_block_fences(&events).into_iter();
 
     // Precompute per-event lookahead: is the *next* event Start(List(None))?
@@ -42,9 +44,41 @@ pub fn format(input: &str) -> String {
         })
         .collect();
 
+    let mut verbatim_link_depth = 0;
     for (((event, range), next_is_ul), next_char) in
         events.into_iter().zip(lookahead).zip(next_text_char)
     {
+        if verbatim_link_depth > 0 {
+            match event {
+                Event::Start(_) => verbatim_link_depth += 1,
+                Event::End(_) => verbatim_link_depth -= 1,
+                _ => {}
+            }
+            continue;
+        }
+        if let Event::Start(Tag::Link { link_type, .. } | Tag::Image { link_type, .. }) = &event
+            && matches!(link_type, LinkType::Shortcut | LinkType::Collapsed)
+        {
+            state.inline.push_str(&input[range.clone()]);
+            if *link_type == LinkType::Collapsed && !input[range].ends_with("[]") {
+                state.inline.push_str("[]");
+            }
+            state.previous_was_emphasis_end = false;
+            verbatim_link_depth = 1;
+            continue;
+        }
+        let boundary = if matches!(event, Event::End(_)) {
+            range.end
+        } else {
+            range.start
+        };
+        while definitions
+            .peek()
+            .is_some_and(|definition| definition.end <= boundary)
+        {
+            let definition = definitions.next().expect("peeked definition exists");
+            state.emit_reference_definitions(&input[definition]);
+        }
         if matches!(event, Event::Start(Tag::CodeBlock(_))) {
             state.code_block_fence = code_fences.next().expect("one fence per code block");
         }
@@ -53,7 +87,87 @@ pub fn format(input: &str) -> String {
         state.process(event, &input[range]);
     }
 
+    for definition in definitions {
+        state.emit_reference_definitions(&input[definition]);
+    }
     state.finish()
+}
+
+fn reference_definition_ranges(input: &str, parser: &Parser<'_>) -> Vec<Range<usize>> {
+    let mut ranges: Vec<_> = parser
+        .reference_definitions()
+        .iter()
+        .map(|(_, definition)| {
+            let start = input[..definition.span.start]
+                .rfind('\n')
+                .map_or(0, |offset| offset + 1);
+            let end = input[definition.span.end..]
+                .find('\n')
+                .map_or(input.len(), |offset| definition.span.end + offset + 1);
+            start..end
+        })
+        .collect();
+    // The parser retains only the first definition of a repeated label.
+    let protected: Vec<_> = Parser::new_ext(input, mk_options())
+        .into_offset_iter()
+        .filter_map(|(event, range)| {
+            matches!(event, Event::Start(Tag::CodeBlock(_) | Tag::HtmlBlock)).then_some(range)
+        })
+        .collect();
+    let mut offset = 0;
+    for line in input.split_inclusive('\n') {
+        if !ranges.iter().any(|range| range.contains(&offset))
+            && !protected.iter().any(|range| range.contains(&offset))
+            && line.contains("]:")
+        {
+            let candidate = Parser::new_ext(&input[offset..], mk_options());
+            for (_, definition) in candidate.reference_definitions().iter() {
+                if definition.span.start < line.len() {
+                    let end = offset + definition.span.end;
+                    let end = input[end..]
+                        .find('\n')
+                        .map_or(input.len(), |next| end + next + 1);
+                    ranges.push(offset..end);
+                }
+            }
+        }
+        offset += line.len();
+    }
+    ranges.sort_by_key(|range| range.start);
+    let mut groups: Vec<Range<usize>> = Vec::new();
+    for range in ranges {
+        if let Some(previous) = groups.last_mut()
+            && range.start <= previous.end
+        {
+            previous.end = previous.end.max(range.end);
+        } else {
+            groups.push(range);
+        }
+    }
+    groups
+}
+
+fn reference_suffix(kind: LinkType, source: &str) -> Option<String> {
+    match kind {
+        LinkType::Shortcut => Some("]".to_owned()),
+        LinkType::Collapsed => Some("][]".to_owned()),
+        LinkType::Reference => {
+            let start = source
+                .rmatch_indices('[')
+                .find(|(offset, _)| {
+                    source[..*offset]
+                        .chars()
+                        .rev()
+                        .take_while(|&ch| ch == '\\')
+                        .count()
+                        % 2
+                        == 0
+                })?
+                .0;
+            Some(format!("]{}", &source[start..]))
+        }
+        _ => None,
+    }
 }
 
 fn code_block_fences(events: &[(Event<'_>, Range<usize>)]) -> Vec<String> {
@@ -134,7 +248,7 @@ struct FormatterState {
     list_item_widths: Vec<usize>,
 
     // Link/image stack: stores (dest_url, title) from Start until End.
-    link_stack: Vec<(String, String)>,
+    link_stack: Vec<(String, String, Option<String>)>,
     emphasis_delimiters: Vec<&'static str>,
     previous_was_emphasis_end: bool,
     footnote_paragraphs: Option<usize>,
@@ -237,7 +351,7 @@ impl FormatterState {
     }
 
     #[allow(clippy::too_many_lines)] // exhaustive match over pulldown-cmark Tag variants
-    fn on_start(&mut self, tag: Tag<'_>, _source: &str) {
+    fn on_start(&mut self, tag: Tag<'_>, source: &str) {
         match tag {
             Tag::Paragraph => {
                 // Inside a list, don't emit a blank before the paragraph—
@@ -344,17 +458,29 @@ impl FormatterState {
             Tag::Strong => self.start_emphasis(true),
             Tag::Strikethrough => self.inline.push_str("~~"),
             Tag::Link {
-                dest_url, title, ..
+                dest_url,
+                title,
+                link_type,
+                ..
             } => {
-                self.link_stack
-                    .push((dest_url.into_string(), title.into_string()));
+                self.link_stack.push((
+                    dest_url.into_string(),
+                    title.into_string(),
+                    reference_suffix(link_type, source),
+                ));
                 self.inline.push('[');
             }
             Tag::Image {
-                dest_url, title, ..
+                dest_url,
+                title,
+                link_type,
+                ..
             } => {
-                self.link_stack
-                    .push((dest_url.into_string(), title.into_string()));
+                self.link_stack.push((
+                    dest_url.into_string(),
+                    title.into_string(),
+                    reference_suffix(link_type, source),
+                ));
                 self.inline.push_str("![");
             }
             Tag::HtmlBlock => {
@@ -481,8 +607,10 @@ impl FormatterState {
             }
             TagEnd::Strikethrough => self.inline.push_str("~~"),
             TagEnd::Link | TagEnd::Image => {
-                if let Some((dest, title)) = self.link_stack.pop() {
-                    if title.is_empty() {
+                if let Some((dest, title, suffix)) = self.link_stack.pop() {
+                    if let Some(suffix) = suffix {
+                        self.inline.push_str(&suffix);
+                    } else if title.is_empty() {
                         write!(self.inline, "]({dest})").expect("writing to String is infallible");
                     } else {
                         write!(self.inline, "]({dest} \"{title}\")").expect("writing to String is infallible");
@@ -649,6 +777,26 @@ impl FormatterState {
             }
             self.inline.push_str(&s);
         }
+    }
+
+    fn emit_reference_definitions(&mut self, source: &str) {
+        if self.in_tight_item && self.inline.is_empty() && !self.out.ends_with('\n') {
+            let start = self.out.rfind('\n').map_or(0, |offset| offset + 1);
+            self.out.truncate(start);
+            self.in_tight_item = false;
+        }
+        if !self.inline.is_empty() {
+            let text = std::mem::take(&mut self.inline);
+            self.flush_inline_text(&text, &self.list_continuation_prefix());
+            self.in_tight_item = false;
+            self.needs_blank = true;
+        }
+        self.emit_blank_if_needed();
+        self.out.push_str(source);
+        if !self.out.ends_with('\n') {
+            self.out.push('\n');
+        }
+        self.needs_blank = true;
     }
 
     fn emit_inline_code(&mut self, code: &str) {

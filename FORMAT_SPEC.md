@@ -201,9 +201,11 @@ block elements).
 
 ### Link and Image Style (MD054)
 
-The formatter does not rewrite link or image syntax between styles (inline vs. reference).
-It does remove unnecessary angle brackets from URLs that do not require them per CommonMark
-(MD034).
+Preserve inline, full-reference, collapsed-reference, and shortcut link and image styles.
+Preserve reference labels, definition order, unused definitions, and duplicate definitions.
+Collapsed and shortcut labels retain their source text because changing that text can change the reference identity.
+Never generate numbered reference labels or sort definitions after unrelated edits.
+The formatter can remove unnecessary angle brackets from inline URLs that do not require them per CommonMark (MD034).
 
 ### Blockquotes (MD027, MD028)
 

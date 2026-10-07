@@ -365,6 +365,29 @@ fn literal_asterisks_do_not_become_emphasis() {
 }
 
 #[test]
+fn reference_links_keep_their_source_labels_and_definition_order() {
+    for input in [
+        "Read [the guide][Guide Name].\n\n[Guide Name]: https://example.com/install \"Guide\"\n",
+        "[guide]: https://example.com\n\nRead [guide][] and [guide].\n",
+        "![image][Picture]\n\n[unused]: /unused\n[Picture]: image.png\n",
+        "First paragraph.\n\n[guide]: /guide\n\nRead [guide].\n",
+        "[guide]: /guide\n  \"Multiline title\"\n",
+        "> [guide]: /guide\n>\n> Read [guide].\n",
+        "- Read [guide].\n\n  [guide]: /guide\n",
+        "[guide]: /first\n[guide]: /second\n\nRead [guide].\n",
+        "[foo _bar_]: /guide\n\nRead [foo _bar_][] and [foo _bar_].\n",
+        "[a\\[b]: /guide\n\nRead [text][a\\[b].\n",
+        "- [guide]: /guide\n\nRead [guide].\n",
+    ] {
+        assert_formats_to(input, input);
+    }
+    let before = "Read [guide].\n\n[guide]: /old\n";
+    let after = "Read [guide].\n\n[guide]: /new\n";
+    assert_formats_to(before, before);
+    assert_formats_to(after, after);
+}
+
+#[test]
 fn link_and_image_preserved() {
     assert_formats_to(
         "[link](https://example.com) and ![img](pic.png)\n",
