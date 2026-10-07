@@ -254,26 +254,28 @@ fn nested_ordered_list_under_bullet_item_stays_tight() {
 
             - First item:
               1. One
-              2. Two
+              1. Two
             - Second item
         "},
     );
 }
 
 #[test]
-fn ordered_list_preserved() {
+fn ordered_lists_use_stable_markers_and_preserve_the_start() {
     assert_formats_to(
-        indoc! {"
-            1. First
-            2. Second
-            3. Third
-        "},
-        indoc! {"
-            1. First
-            2. Second
-            3. Third
-        "},
+        "7. first\n8. second\n9. third\n",
+        "7. first\n1. second\n1. third\n",
     );
+    let before = "1. first\n1. last\n";
+    let after = "1. first\n1. inserted\n1. last\n";
+    assert_formats_to(before, before);
+    assert_formats_to(after, after);
+}
+
+#[test]
+fn ordered_list_preserved() {
+    let input = "1. First\n1. Second\n1. Third\n";
+    assert_formats_to(input, input);
 }
 
 #[test]

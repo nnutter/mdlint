@@ -307,9 +307,12 @@ impl FormatterState {
                         self.in_tight_item = false;
                     }
                 }
+                // A non-1 ordered marker cannot interrupt the parent paragraph.
+                if self.list_depth > 0 && start.is_some_and(|number| number != 1) {
+                    self.out.push('\n');
+                }
                 self.list_depth += 1;
-                // Ordered lists always start at 1 in canonical form (MD029).
-                self.list_starts.push(start.map(|_| 1u64));
+                self.list_starts.push(start);
             }
             Tag::Item => {
                 // For loose lists, End(Paragraph) sets needs_blank = true.
@@ -322,7 +325,7 @@ impl FormatterState {
                 let marker = match self.list_starts.last_mut() {
                     Some(Some(n)) => {
                         let s = format!("{indent}{n}. ");
-                        *n += 1;
+                        *n = 1;
                         s
                     }
                     _ => format!("{indent}- "),
@@ -1042,50 +1045,25 @@ mod tests {
 
     #[test]
     fn test_ordered_list() {
-        let input = indoc! {"
-            1. First
-            2. Second
-            3. Third"};
-        let output = format(input);
-        assert_eq!(
-            output,
-            indoc! {"
-                1. First
-                2. Second
-                3. Third
-            "}
+        assert_formats_to(
+            "1. First\n2. Second\n3. Third",
+            "1. First\n1. Second\n1. Third\n",
         );
     }
 
     #[test]
-    fn test_ordered_list_all_ones_renumbered() {
-        // "one" style (1. / 1. / 1.) is canonicalized to sequential.
+    fn test_ordered_list_all_ones_unchanged() {
         assert_formats_to(
-            indoc! {"
-                1. First
-                1. Second
-                1. Third"},
-            indoc! {"
-                1. First
-                2. Second
-                3. Third
-            "},
+            "1. First\n1. Second\n1. Third\n",
+            "1. First\n1. Second\n1. Third\n",
         );
     }
 
     #[test]
-    fn test_ordered_list_non_one_start_renumbered() {
-        // Lists starting at a number other than 1 are renumbered from 1.
+    fn test_ordered_list_non_one_start_preserved() {
         assert_formats_to(
-            indoc! {"
-                3. First
-                5. Second
-                9. Third"},
-            indoc! {"
-                1. First
-                2. Second
-                3. Third
-            "},
+            "3. First\n5. Second\n9. Third",
+            "3. First\n1. Second\n1. Third\n",
         );
     }
 
@@ -1483,13 +1461,13 @@ mod tests {
                enabled = false
                ```
 
-            2. **Another item:**
+            1. **Another item:**
 
                ```toml
                line_length = 100
                ```
         "};
-        // Starting with `1. / 1.` triggers MD029 renumbering in the formatter.
+        // Repeated markers keep continuation indentation stable.
         assert_formats_to(
             indoc! {"
                 1. **Enable rule:**
