@@ -359,6 +359,9 @@ impl FormatterState {
                 if self.list_depth == 0 {
                     self.emit_blank_if_needed();
                 } else if !self.in_tight_item {
+                    // A later paragraph must not become lazy continuation text
+                    // belonging to a preceding nested list.
+                    self.needs_blank = true;
                     self.emit_blank_if_needed();
                     self.write_bq_prefix();
                     self.out.push_str(&self.list_continuation_prefix());
