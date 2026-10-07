@@ -6,7 +6,7 @@ use mdlint::error::Result;
 use mdlint::fix::Fixer;
 use mdlint::format::{DefaultFormatter, Formatter as _, GitlabFormatter, JsonFormatter};
 use mdlint::formatter;
-use mdlint::glob::FileWalker;
+use mdlint::glob::find_files;
 use mdlint::lint::{LintEngine, LintResult};
 use mdlint::migrate::run_migrate;
 use mdlint::types::Violation;
@@ -122,47 +122,6 @@ fn merge_excludes(cli_excludes: &[PathBuf], config_excludes: &[String]) -> Vec<P
     let mut excludes: Vec<PathBuf> = cli_excludes.to_vec();
     excludes.extend(config_excludes.iter().map(PathBuf::from));
     excludes
-}
-
-fn find_files(
-    paths: &[PathBuf],
-    excludes: &[PathBuf],
-    respect_ignore: bool,
-) -> Result<Vec<PathBuf>> {
-    let mut all_files = Vec::new();
-    let mut add_to_file = |path: PathBuf| {
-        if !all_files.contains(&path) && !is_excluded(&path, excludes) {
-            all_files.push(path);
-        }
-    };
-
-    for path in paths {
-        if path.is_dir() {
-            let walker = FileWalker::new(respect_ignore);
-            walker
-                .find_markdown_files(path)?
-                .into_iter()
-                .for_each(&mut add_to_file);
-        } else if path.is_file() {
-            add_to_file(path.clone());
-        } else {
-            eprintln!("Warning: Path not found: {}", path.display());
-        }
-    }
-
-    Ok(all_files)
-}
-
-fn is_excluded(path: &PathBuf, excludes: &[PathBuf]) -> bool {
-    excludes.iter().any(|exclude| {
-        // Canonicalize the exclude path so relative paths (e.g. "FORMAT_SPEC.md")
-        // match against the absolute paths returned by the file walker.
-        if let Ok(canonical) = exclude.canonicalize() {
-            path == &canonical || path.starts_with(&canonical)
-        } else {
-            path == exclude || path.starts_with(exclude)
-        }
-    })
 }
 
 type FileOutcome = Result<(PathBuf, Vec<Violation>, Vec<String>)>;
