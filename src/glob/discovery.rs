@@ -1,5 +1,6 @@
 use crate::error::Result;
-use crate::glob::FileWalker;
+use crate::glob::{FileWalker, GlobMatcher};
+use std::env;
 use std::path::PathBuf;
 
 pub fn find_files(
@@ -7,9 +8,31 @@ pub fn find_files(
     excludes: &[PathBuf],
     respect_ignore: bool,
 ) -> Result<Vec<PathBuf>> {
+    let root = env::current_dir()?.canonicalize()?;
+    let mut literal_excludes = Vec::new();
+    let mut patterns = Vec::new();
+    for exclude in excludes {
+        if let Ok(canonical) = exclude.canonicalize() {
+            literal_excludes.push(canonical);
+        } else if let Some(pattern) = exclude.to_str()
+            && pattern.contains(['*', '?', '[', '{'])
+        {
+            patterns.push(format!("#{pattern}"));
+        } else {
+            literal_excludes.push(root.join(exclude));
+        }
+    }
+    let matcher = GlobMatcher::new(&patterns)?;
     let mut all_files = Vec::new();
     let mut add_to_file = |path: PathBuf| {
-        if !all_files.contains(&path) && !is_excluded(&path, excludes) {
+        let relative = path.strip_prefix(&root).unwrap_or(&path);
+        if !all_files.contains(&path)
+            && !literal_excludes
+                .iter()
+                .any(|exclude| path.starts_with(exclude))
+            && matcher.matches(relative)
+            && matcher.matches(&path)
+        {
             all_files.push(path);
         }
     };
@@ -22,23 +45,11 @@ pub fn find_files(
                 .into_iter()
                 .for_each(&mut add_to_file);
         } else if path.is_file() {
-            add_to_file(path.clone());
+            add_to_file(path.canonicalize()?);
         } else {
             eprintln!("Warning: Path not found: {}", path.display());
         }
     }
 
     Ok(all_files)
-}
-
-fn is_excluded(path: &PathBuf, excludes: &[PathBuf]) -> bool {
-    excludes.iter().any(|exclude| {
-        // Canonicalize the exclude path so relative paths (e.g. "FORMAT_SPEC.md")
-        // match against the absolute paths returned by the file walker.
-        if let Ok(canonical) = exclude.canonicalize() {
-            path == &canonical || path.starts_with(&canonical)
-        } else {
-            path == exclude || path.starts_with(exclude)
-        }
-    })
 }
