@@ -286,6 +286,18 @@ fn list_item_paragraphs_keep_their_boundaries_and_indentation() {
 }
 
 #[test]
+fn footnote_paragraphs_keep_their_indentation() {
+    assert_formats_to(
+        "é[^note]\n\n[^note]: body\n\n    😀\n",
+        "é[^note]\n\n[^note]: body\n\n    😀\n",
+    );
+    assert_formats_to(
+        "note[^n]\n\n[^n]: first\n    second\n",
+        "note[^n]\n\n[^n]: first\n    second\n",
+    );
+}
+
+#[test]
 fn code_block_content_preserved_verbatim() {
     // Tabs and unusual indentation inside code blocks must survive unchanged.
     let input = indoc! {"

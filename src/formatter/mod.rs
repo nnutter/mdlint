@@ -121,6 +121,7 @@ struct FormatterState {
     link_stack: Vec<(String, String)>,
     emphasis_delimiters: Vec<&'static str>,
     previous_was_emphasis_end: bool,
+    footnote_paragraphs: Option<usize>,
 
     // Set by the outer format() loop before each event: true when the
     // immediately following event is Start(List(None)).  Used to detect
@@ -156,6 +157,7 @@ impl FormatterState {
             link_stack: Vec::new(),
             emphasis_delimiters: Vec::new(),
             previous_was_emphasis_end: false,
+            footnote_paragraphs: None,
             next_is_unordered_list: false,
             next_text_char: None,
             table_alignments: Vec::new(),
@@ -346,6 +348,7 @@ impl FormatterState {
                 self.bq_depth += 1;
             }
             Tag::FootnoteDefinition(label) => {
+                self.footnote_paragraphs = Some(0);
                 self.emit_blank_if_needed();
                 // Write the label prefix; body will be flushed inline.
                 self.write_bq_prefix();
@@ -382,8 +385,15 @@ impl FormatterState {
                 if !text.trim().is_empty() {
                     if self.list_depth == 0 {
                         self.write_bq_prefix();
+                        if self.footnote_paragraphs.is_some_and(|count| count > 0) {
+                            self.out.push_str("    ");
+                        }
                     }
-                    let prefix = self.list_continuation_prefix();
+                    let mut prefix = self.list_continuation_prefix();
+                    if let Some(count) = &mut self.footnote_paragraphs {
+                        prefix.insert_str(0, "    ");
+                        *count += 1;
+                    }
                     self.flush_inline_text(&text, &prefix);
                     self.needs_blank = true;
                 }
@@ -472,6 +482,7 @@ impl FormatterState {
                 self.needs_blank = true;
             }
             TagEnd::FootnoteDefinition => {
+                self.footnote_paragraphs = None;
                 let text = std::mem::take(&mut self.inline);
                 self.flush_inline_text(&text, "");
                 self.needs_blank = true;
