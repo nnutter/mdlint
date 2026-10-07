@@ -28,8 +28,8 @@ impl Rule for MD024 {
 
         let mut violations = Vec::new();
         let mut heading_texts: HashMap<String, (usize, HeadingLevel)> = HashMap::new();
-        let mut sibling_headings: HashMap<(HeadingLevel, String), usize> = HashMap::new();
-        let mut last_heading_level: Option<HeadingLevel> = None;
+        let mut sibling_headings: HashMap<(usize, HeadingLevel, String), usize> = HashMap::new();
+        let mut parents: Vec<(HeadingLevel, usize)> = Vec::new();
         let mut in_heading = false;
         let mut current_heading_text = String::new();
         let mut current_heading_line = 0;
@@ -56,16 +56,15 @@ impl Rule for MD024 {
                     let text = current_heading_text.trim().to_owned();
 
                     if siblings_only {
-                        // Check if same level heading with same text exists
-                        if let Some(&prev_level) = last_heading_level.as_ref()
-                            && prev_level != current_heading_level
+                        while parents
+                            .last()
+                            .is_some_and(|(level, _)| *level >= current_heading_level)
                         {
-                            // Different level, clear sibling tracking
-                            sibling_headings.clear();
+                            parents.pop();
                         }
-
+                        let parent = parents.last().map_or(0, |(_, line)| *line);
                         if let Some(&first_line) =
-                            sibling_headings.get(&(current_heading_level, text.clone()))
+                            sibling_headings.get(&(parent, current_heading_level, text.clone()))
                         {
                             violations.push(Violation {
                                 line: current_heading_line,
@@ -78,10 +77,11 @@ impl Rule for MD024 {
                             });
                         } else {
                             sibling_headings.insert(
-                                (current_heading_level, text.clone()),
+                                (parent, current_heading_level, text.clone()),
                                 current_heading_line,
                             );
                         }
+                        parents.push((current_heading_level, current_heading_line));
                     } else {
                         // Check globally
                         if let Some(&(first_line, _first_level)) = heading_texts.get(&text) {
@@ -100,7 +100,6 @@ impl Rule for MD024 {
                         }
                     }
 
-                    last_heading_level = Some(current_heading_level);
                     in_heading = false;
                 }
                 _ => {}
@@ -182,6 +181,29 @@ mod tests {
             [
                 "test.md:3:1: MD024 Multiple sibling headings with the same content: \"Heading\" (first at line 1)",
             ]
+        );
+    }
+
+    #[test]
+    fn sibling_scope_survives_child_headings() {
+        let config = serde_json::json!({"siblings_only": true});
+        let violations = MD024.check(
+            &MarkdownParser::new("## Examples\n### Child\n## Examples\n"),
+            Some(&config),
+        );
+        assert_eq!(
+            rendered(&violations),
+            [
+                "test.md:3:1: MD024 Multiple sibling headings with the same content: \"Examples\" (first at line 1)"
+            ]
+        );
+        assert!(
+            MD024
+                .check(
+                    &MarkdownParser::new("## One\n### Examples\n## Two\n### Examples\n"),
+                    Some(&config)
+                )
+                .is_empty()
         );
     }
 
