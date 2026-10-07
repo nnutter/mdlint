@@ -140,12 +140,18 @@ fn violations_to_actions(
                 v_line >= range.start.line && v_line <= range.end.line
             }
         })
-        .map(|v| {
+        .filter_map(|v| {
             let fix = v.fix.as_ref().expect("fix is_some checked above");
-            let edit = convert::fix_to_text_edit(fix, content);
+            let edit = match convert::fix_to_text_edit(fix, content) {
+                Ok(edit) => edit,
+                Err(error) => {
+                    eprintln!("[mdlint-server] Cannot create fix for {}: {error}", v.rule);
+                    return None;
+                }
+            };
             let mut changes = HashMap::new();
             changes.insert(uri.clone(), vec![edit]);
-            CodeActionOrCommand::CodeAction(CodeAction {
+            Some(CodeActionOrCommand::CodeAction(CodeAction {
                 title: format!("Fix {}", v.rule),
                 kind: Some(CodeActionKind::QUICKFIX),
                 edit: Some(WorkspaceEdit {
@@ -153,7 +159,7 @@ fn violations_to_actions(
                     ..Default::default()
                 }),
                 ..Default::default()
-            })
+            }))
         })
         .collect()
 }
