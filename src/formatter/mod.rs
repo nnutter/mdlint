@@ -90,6 +90,15 @@ fn mk_options() -> Options {
         | Options::ENABLE_HEADING_ATTRIBUTES
 }
 
+pub(crate) fn emphasis_delimiter(strong: bool, alternate: bool) -> &'static str {
+    match (strong, alternate) {
+        (false, false) => "*",
+        (false, true) => "_",
+        (true, false) => "**",
+        (true, true) => "__",
+    }
+}
+
 #[allow(clippy::struct_excessive_bools)] // each bool is a distinct formatting phase flag
 struct FormatterState {
     out: String,
@@ -218,12 +227,7 @@ impl FormatterState {
     fn start_emphasis(&mut self, strong: bool) {
         // Adjacent sibling spans can merge or stop parsing when both use '*'.
         let alternate = self.previous_was_emphasis_end && self.inline.ends_with('*');
-        let delimiter = match (strong, alternate) {
-            (false, false) => "*",
-            (false, true) => "_",
-            (true, false) => "**",
-            (true, true) => "__",
-        };
+        let delimiter = emphasis_delimiter(strong, alternate);
         self.emphasis_delimiters.push(delimiter);
         self.inline.push_str(delimiter);
     }
