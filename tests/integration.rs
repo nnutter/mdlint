@@ -96,6 +96,29 @@ fn check_fix_removes_trailing_spaces() {
 }
 
 #[test]
+fn ordered_list_fixes_preserve_starts_and_match_formatting() {
+    let config = Config::default().apply_rule_filters(&["MD029".to_owned()], &[]);
+    let engine = LintEngine::new(config);
+    for (input, expected) in [
+        ("7. first\n8. second\n", "7. first\n1. second\n"),
+        ("> 7. first\n> 8. second\n", "> 7. first\n> 1. second\n"),
+        (
+            "- parent\n\n  7. first\n  8. second\n",
+            "- parent\n\n  7. first\n  1. second\n",
+        ),
+    ] {
+        let violations = engine.lint_content(input).unwrap();
+        let fixes: Vec<_> = violations.iter().filter_map(|v| v.fix.clone()).collect();
+        assert_eq!(
+            Fixer::new().apply_fixes_to_content(input, &fixes).unwrap(),
+            expected
+        );
+        assert_eq!(formatter::format(input), expected);
+        assert!(engine.lint_content(expected).unwrap().is_empty());
+    }
+}
+
+#[test]
 fn safe_formatter_delimiters_pass_style_checks() {
     let config = Config::default().apply_rule_filters(
         &["MD048".to_owned(), "MD049".to_owned(), "MD050".to_owned()],

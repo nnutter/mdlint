@@ -46,11 +46,10 @@ fn semantic_events(input: &str) -> Vec<Event<'static>> {
         }
         let mut event = event.into_static();
         match &mut event {
-            // Fence syntax is not semantic. Ordered starts are canonicalized to 1.
+            // Fence syntax is not semantic.
             Event::Start(Tag::CodeBlock(kind @ CodeBlockKind::Indented)) => {
                 *kind = CodeBlockKind::Fenced("".into());
             }
-            Event::Start(Tag::List(Some(start))) => *start = 1,
             // Resolved references and inline links have the same rendered target.
             Event::Start(Tag::Link { link_type, id, .. } | Tag::Image { link_type, id, .. }) => {
                 *link_type = LinkType::Inline;

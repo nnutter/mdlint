@@ -23,21 +23,21 @@ impl Rule for MD029 {
         let style = config
             .and_then(|c| c.get("style"))
             .and_then(|v| v.as_str())
-            .unwrap_or("ordered");
+            .unwrap_or("one");
 
         let mut violations = Vec::new();
         // Stack: None = unordered list, Some((expected_next, seen_non_one)) = ordered list.
         // Using AST events rather than raw line scanning ensures that code blocks, headings,
         // and other block-level elements correctly break list continuity.
-        let mut list_stack: Vec<Option<(usize, bool)>> = Vec::new();
+        let mut list_stack: Vec<Option<(usize, bool, bool)>> = Vec::new();
 
         for (event, range) in parser.parse_with_offsets() {
             match event {
                 Event::Start(Tag::List(start)) => {
-                    if start.is_some() {
-                        // Ordered list. The formatter canonicalises all ordered lists to
-                        // start at 1, so we always expect the first item to be 1.
-                        list_stack.push(Some((1, false)));
+                    if let Some(start) = start {
+                        let start =
+                            usize::try_from(start).expect("CommonMark list numbers fit usize");
+                        list_stack.push(Some((start, false, true)));
                     } else {
                         list_stack.push(None);
                     }
@@ -46,17 +46,18 @@ impl Rule for MD029 {
                     list_stack.pop();
                 }
                 Event::Start(Tag::Item) => {
-                    if let Some(Some((expected, seen_non_one))) = list_stack.last_mut() {
-                        let line_num = parser.offset_to_line(range.start);
+                    if let Some(Some((expected, seen_non_one, first))) = list_stack.last_mut() {
+                        let (line_num, column) = parser.offset_to_position(range.start);
                         if let Some(line) = parser.get_line(line_num)
-                            && let Some(num) = parse_item_number(line.trim_start())
+                            && let Some(item) = line.get(column - 1..)
+                            && let Some(num) = parse_item_number(item)
                         {
-                            if num != 1 {
+                            if num != 1 && !*first {
                                 *seen_non_one = true;
                             }
 
                             let is_valid = match style {
-                                "one" => num == 1,
+                                "one" => num == if *first { *expected } else { 1 },
                                 "ordered" => num == *expected,
                                 _ => {
                                     // "one_or_ordered": if we've seen non-1, require sequential;
@@ -70,13 +71,14 @@ impl Rule for MD029 {
                             };
 
                             if !is_valid {
-                                let should_be = if style == "one" { 1 } else { *expected };
-                                let indent = line.len() - line.trim_start().len();
-                                let digit_len = line
-                                    .trim_start()
-                                    .chars()
-                                    .take_while(char::is_ascii_digit)
-                                    .count();
+                                let should_be = if style == "one" && !*first {
+                                    1
+                                } else {
+                                    *expected
+                                };
+                                let indent = column - 1;
+                                let digit_len =
+                                    item.chars().take_while(char::is_ascii_digit).count();
                                 violations.push(Violation {
                                     line: line_num,
                                     column: Some(indent + 1),
@@ -98,6 +100,7 @@ impl Rule for MD029 {
                             }
 
                             *expected += 1;
+                            *first = false;
                         }
                     }
                 }
@@ -166,14 +169,7 @@ mod tests {
         let rule = MD029;
         let violations = rule.check(&parser, None);
 
-        // Default "ordered": items 2 and 3 should be 2 and 3, not 1
-        assert_eq!(
-            rendered(&violations),
-            [
-                "test.md:2:1: MD029 Ordered list item prefix: expected 2, found 1",
-                "test.md:3:1: MD029 Ordered list item prefix: expected 3, found 1",
-            ]
-        );
+        assert!(violations.is_empty());
     }
 
     #[test]
@@ -189,8 +185,8 @@ mod tests {
         assert_eq!(
             rendered(&violations),
             [
-                "test.md:2:1: MD029 Ordered list item prefix: expected 2, found 3",
-                "test.md:3:1: MD029 Ordered list item prefix: expected 3, found 4",
+                "test.md:2:1: MD029 Ordered list item prefix: expected 1, found 3",
+                "test.md:3:1: MD029 Ordered list item prefix: expected 1, found 4",
             ]
         );
     }
@@ -241,27 +237,19 @@ mod tests {
 
     #[test]
     fn test_fix_populated_for_wrong_number() {
-        let content = indoc! {"
-            1. First
-            1. Second
-            1. Third"};
-        let parser = MarkdownParser::new(content);
-        let rule = MD029;
-        let violations = rule.check(&parser, None);
-
+        let content = "1. First\n2. Second\n3. Third";
+        let violations = MD029.check(&MarkdownParser::new(content), None);
         assert_eq!(
             rendered(&violations),
             [
-                "test.md:2:1: MD029 Ordered list item prefix: expected 2, found 1",
-                "test.md:3:1: MD029 Ordered list item prefix: expected 3, found 1",
+                "test.md:2:1: MD029 Ordered list item prefix: expected 1, found 2",
+                "test.md:3:1: MD029 Ordered list item prefix: expected 1, found 3",
             ]
         );
-        let fix0 = violations[0].fix.as_ref().expect("fix should be Some");
-        assert_eq!(fix0.line_start, 2);
-        assert_eq!(fix0.replacement, "2");
-        let fix1 = violations[1].fix.as_ref().expect("fix should be Some");
-        assert_eq!(fix1.line_start, 3);
-        assert_eq!(fix1.replacement, "3");
+        assert_eq!(
+            apply_fixes(content, &violations),
+            "1. First\n1. Second\n1. Third"
+        );
     }
 
     #[test]
@@ -271,17 +259,17 @@ mod tests {
 
                text
 
-            1. Second"};
+            2. Second"};
         let parser = MarkdownParser::new(content);
         let rule = MD029;
         let violations = rule.check(&parser, None);
 
         assert_eq!(
             rendered(&violations),
-            ["test.md:5:1: MD029 Ordered list item prefix: expected 2, found 1"]
+            ["test.md:5:1: MD029 Ordered list item prefix: expected 1, found 2"]
         );
         let fix = violations[0].fix.as_ref().expect("fix should be Some");
-        assert_eq!(fix.replacement, "2");
+        assert_eq!(fix.replacement, "1");
         assert_eq!(fix.column_start, Some(1));
     }
 
@@ -289,8 +277,8 @@ mod tests {
     fn test_fix_renumbers_list() {
         let content = indoc! {"
             1. First
-            1. Second
-            1. Third
+            2. Second
+            3. Third
         "};
         let parser = MarkdownParser::new(content);
         let rule = MD029;
@@ -300,8 +288,8 @@ mod tests {
             fixed,
             indoc! {"
                 1. First
-                2. Second
-                3. Third
+                1. Second
+                1. Third
             "}
         );
     }
