@@ -511,6 +511,25 @@ fn format_rewrites_file_in_place() {
     );
 }
 
+#[test]
+fn runtime_errors_are_reported_on_stderr() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("invalid.toml");
+    fs::write(&config, "default_enabled = [").unwrap();
+
+    let output = Command::new(mdlint_bin())
+        .args(["--config", config.to_str().unwrap(), "format"])
+        .current_dir(dir.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("Configuration error"), "{stderr}");
+}
+
 // ── `mdlint check` CLI ───────────────────────────────────────────────────────
 
 #[test]
