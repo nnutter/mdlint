@@ -146,9 +146,14 @@ fn fixes_overlap(a: &Fix, b: &Fix) -> bool {
 
 /// Apply a single fix to the lines
 fn apply_single_fix(lines: &mut Vec<String>, fix: &Fix) -> Result<()> {
-    // Convert to 0-indexed
-    let start_line = fix.line_start.saturating_sub(1);
-    let end_line = fix.line_end.saturating_sub(1);
+    if fix.line_start == 0 || fix.line_end < fix.line_start {
+        return Err(MarkdownlintError::Fix(format!(
+            "Invalid fix line range {}..{}",
+            fix.line_start, fix.line_end
+        )));
+    }
+    let start_line = fix.line_start - 1;
+    let end_line = fix.line_end - 1;
 
     if start_line >= lines.len() {
         return Err(MarkdownlintError::Fix(format!(
@@ -171,32 +176,22 @@ fn apply_single_fix(lines: &mut Vec<String>, fix: &Fix) -> Result<()> {
         let line = lines
             .get(start_line)
             .expect("start_line bounds checked above");
-        let chars: Vec<char> = line.chars().collect();
-
-        if col_start > chars.len() || col_end > chars.len() {
+        if col_start == 0
+            || col_end < col_start
+            || col_end > line.len()
+            || !line.is_char_boundary(col_start - 1)
+            || !line.is_char_boundary(col_end)
+        {
             return Err(MarkdownlintError::Fix(format!(
-                "Fix column range {}..{} out of bounds for line length {}",
-                col_start,
-                col_end,
-                chars.len()
+                "Invalid fix byte column range {col_start}..{col_end} for line length {}",
+                line.len()
             )));
         }
 
-        // Build new line with replacement
-        let before: String = chars
-            .get(..col_start.saturating_sub(1))
-            .expect("col_start bounds checked above")
-            .iter()
-            .collect();
-        let after: String = chars
-            .get(col_end..)
-            .expect("col_end bounds checked above")
-            .iter()
-            .collect();
-        *lines
+        lines
             .get_mut(start_line)
-            .expect("start_line bounds checked above") =
-            format!("{}{}{}", before, fix.replacement, after);
+            .expect("start_line bounds checked above")
+            .replace_range(col_start - 1..col_end, &fix.replacement);
         return Ok(());
     }
 
@@ -283,6 +278,52 @@ mod tests {
         let fixer = Fixer::new();
         let result = fixer.apply_fixes_to_content(content, &[fix]).unwrap();
         assert_eq!(result, "hello Rust");
+    }
+
+    #[test]
+    fn invalid_fix_ranges_return_errors() {
+        for (line_start, line_end, column_start, column_end) in [
+            (0, 1, None, None),
+            (2, 1, None, None),
+            (1, 1, Some(0), Some(1)),
+            (1, 1, Some(4), Some(2)),
+            (1, 1, Some(2), Some(2)),
+            (1, 1, Some(1), Some(1)),
+            (1, 1, Some(1), Some(99)),
+        ] {
+            let fix = Fix {
+                line_start,
+                line_end,
+                column_start,
+                column_end,
+                replacement: "x".to_owned(),
+                description: "Invalid range".to_owned(),
+            };
+            assert!(
+                Fixer::new()
+                    .apply_fixes_to_content("éabc", std::slice::from_ref(&fix))
+                    .is_err(),
+                "expected rejection of {fix:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn byte_range_can_replace_a_multibyte_character() {
+        let fix = Fix {
+            line_start: 1,
+            line_end: 1,
+            column_start: Some(1),
+            column_end: Some(2),
+            replacement: "e".to_owned(),
+            description: "Replace accented character".to_owned(),
+        };
+        let fixer = Fixer::new();
+        assert_eq!(
+            fixer.apply_fixes_to_content("éabc", &[fix]).unwrap(),
+            "eabc"
+        );
+        assert_eq!(fixer.apply_fixes_to_content("eabc", &[]).unwrap(), "eabc");
     }
 
     #[test]
