@@ -207,6 +207,13 @@ Collapsed and shortcut labels retain their source text because changing that tex
 Never generate numbered reference labels or sort definitions after unrelated edits.
 The formatter can remove unnecessary angle brackets from inline URLs that do not require them per CommonMark (MD034).
 
+### Tables (MD055, MD060)
+
+Write one row per source line, with leading and trailing pipes and one space around cell contents.
+Do not pad columns to the longest cell, because changing one cell must not resize unrelated rows.
+Preserve each column's alignment semantics independently.
+Use `---`, `:---`, `---:`, or `:---:` separator cells without width-dependent padding.
+
 ### Blockquotes (MD027, MD028)
 
 Exactly one space after each `>` marker:
@@ -259,9 +266,8 @@ verbatim. The formatter does not modify front matter content.
 - **Link/image URLs and titles.** Not reformatted.
 - **Heading text content.** The text of headings is preserved exactly; only the surrounding
   syntax (ATX vs setext, spacing) is canonicalized.
-- **Table content.** Cell content is preserved. Column alignment markers are preserved. Table
-  formatting (column widths, pipe alignment) may be normalized in a future version but is not
-  in scope for the initial implementation.
+- **Table content.** Cell content and column alignment semantics are preserved.
+  Cell padding is removed without aligning widths across rows.
 
 ---
 

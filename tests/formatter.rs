@@ -412,6 +412,18 @@ fn blockquote_preserved() {
 }
 
 #[test]
+fn changing_a_table_cell_does_not_resize_other_rows() {
+    let before = "| Name | Count |\n| :--- | ---: |\n| short | 1 |\n| other | 2 |\n";
+    let after = "| Name | Count |\n| :--- | ---: |\n| a much longer name | 1 |\n| other | 2 |\n";
+    assert_formats_to(before, before);
+    assert_formats_to(after, after);
+    assert_formats_to(
+        "| Name  | Count |\n| :----- | -----: |\n| short | 1     |\n| other | 2     |\n",
+        before,
+    );
+}
+
+#[test]
 fn gfm_table_canonicalised() {
     // Input without leading/trailing pipes → output with them
     assert_formats_to(
