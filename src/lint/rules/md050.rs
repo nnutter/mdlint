@@ -44,8 +44,7 @@ impl Rule for MD050 {
 
             // Look for strong patterns: **text** or __text__
             let chars: Vec<char> = line.chars().collect();
-            // Byte offset of each char, since the code ranges are byte-based
-            // while the scan below (and the emitted columns) are char-based.
+            // The scan uses characters, but source columns and code ranges use bytes.
             let char_offsets: Vec<usize> = line.char_indices().map(|(offset, _)| offset).collect();
             let mut i = 0;
 
@@ -87,6 +86,8 @@ impl Rule for MD050 {
                                         "underscore"
                                     };
 
+                                    let opening_column = char_offsets[i] + 1;
+                                    let closing_column = char_offsets[j] + 1;
                                     let make_fix = |col: usize, target: &str| Fix {
                                         line_start: line_number,
                                         line_end: line_number,
@@ -104,21 +105,21 @@ impl Rule for MD050 {
                                                 // Report violation for both opening and closing markers
                                                 violations.push(Violation {
                                                     line: line_number,
-                                                    column: Some(i + 1),
+                                                    column: Some(opening_column),
                                                     rule: self.name().to_owned(),
                                                     message: format!(
                                                         "Strong style should be consistent: expected '{expected_marker}', found '{two_char}'"
                                                     ),
-                                                    fix: Some(make_fix(i + 1, expected_marker)),
+                                                    fix: Some(make_fix(opening_column, expected_marker)),
                                                 });
                                                 violations.push(Violation {
                                                     line: line_number,
-                                                    column: Some(j + 1),
+                                                    column: Some(closing_column),
                                                     rule: self.name().to_owned(),
                                                     message: format!(
                                                         "Strong style should be consistent: expected '{expected_marker}', found '{close_two}'"
                                                     ),
-                                                    fix: Some(make_fix(j + 1, expected_marker)),
+                                                    fix: Some(make_fix(closing_column, expected_marker)),
                                                 });
                                             }
                                         } else {
@@ -131,21 +132,21 @@ impl Rule for MD050 {
                                             // Report violation for both opening and closing markers
                                             violations.push(Violation {
                                                 line: line_number,
-                                                column: Some(i + 1),
+                                                column: Some(opening_column),
                                                 rule: self.name().to_owned(),
                                                 message: format!(
                                                     "Strong style should be '{expected_marker}', found '{two_char}'"
                                                 ),
-                                                fix: Some(make_fix(i + 1, expected_marker)),
+                                                fix: Some(make_fix(opening_column, expected_marker)),
                                             });
                                             violations.push(Violation {
                                                 line: line_number,
-                                                column: Some(j + 1),
+                                                column: Some(closing_column),
                                                 rule: self.name().to_owned(),
                                                 message: format!(
                                                     "Strong style should be '{expected_marker}', found '{close_two}'"
                                                 ),
-                                                fix: Some(make_fix(j + 1, expected_marker)),
+                                                fix: Some(make_fix(closing_column, expected_marker)),
                                             });
                                         }
                                     }

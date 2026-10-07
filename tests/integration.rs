@@ -96,6 +96,44 @@ fn check_fix_removes_trailing_spaces() {
 }
 
 #[test]
+fn unicode_line_length_diagnostic_uses_a_byte_column() {
+    let config = Config {
+        default_enabled: false,
+        rules: std::collections::HashMap::from([(
+            "MD013".to_owned(),
+            RuleConfig::Config(std::collections::HashMap::from([(
+                "line_length".to_owned(),
+                toml::Value::Integer(2),
+            )])),
+        )]),
+        ..Config::default()
+    };
+    let violations = LintEngine::new(config).lint_content("é😀x\n").unwrap();
+    assert_eq!(violations.len(), 1);
+    assert_eq!(violations[0].column, Some(7));
+}
+
+#[test]
+fn unicode_inline_fixes_use_byte_columns() {
+    for (rule, input, expected, columns) in [
+        ("MD009", "é😀   \n", "é😀\n", vec![7]),
+        ("MD049", "é _😀_\n", "é *😀*\n", vec![4, 9]),
+        ("MD050", "é __😀__\n", "é **😀**\n", vec![4, 10]),
+    ] {
+        let config = Config::default().apply_rule_filters(&[rule.to_owned()], &[]);
+        let engine = LintEngine::new(config);
+        let violations = engine.lint_content(input).unwrap();
+        let mut actual_columns: Vec<_> = violations.iter().map(|v| v.column.unwrap()).collect();
+        actual_columns.sort_unstable();
+        assert_eq!(actual_columns, columns, "{rule}");
+        let fixes: Vec<_> = violations.into_iter().map(|v| v.fix.unwrap()).collect();
+        let result = Fixer::new().apply_fixes_to_content(input, &fixes).unwrap();
+        assert_eq!(result, expected, "{rule}");
+        assert!(engine.lint_content(expected).unwrap().is_empty(), "{rule}");
+    }
+}
+
+#[test]
 fn check_detects_hard_tabs() {
     let content = fixture("check/violations.md");
     let engine = all_rules_engine();
