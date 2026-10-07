@@ -211,19 +211,10 @@ fn apply_fixes(engine: &LintEngine, lint_result: &LintResult) -> Result<()> {
         }
 
         let content = fs::read_to_string(&file_result.path)?;
-        match engine.fix_content(&content) {
-            Ok(fixed_content) if fixed_content != content => {
-                fs::write(&file_result.path, fixed_content)?;
-                eprintln!("Fixed: {}", file_result.path.display());
-            }
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!(
-                    "Failed to apply fixes to {}: {}",
-                    file_result.path.display(),
-                    e
-                );
-            }
+        let fixed_content = engine.fix_content(&content)?;
+        if fixed_content != content {
+            fs::write(&file_result.path, fixed_content)?;
+            eprintln!("Fixed: {}", file_result.path.display());
         }
     }
 
