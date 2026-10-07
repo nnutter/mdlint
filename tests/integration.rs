@@ -96,6 +96,31 @@ fn check_fix_removes_trailing_spaces() {
 }
 
 #[test]
+fn safe_formatter_delimiters_pass_style_checks() {
+    let config = Config::default().apply_rule_filters(
+        &["MD048".to_owned(), "MD049".to_owned(), "MD050".to_owned()],
+        &[],
+    );
+    let engine = LintEngine::new(config);
+    for input in ["~~~lang`tag\ncode\n~~~\n", "_one_*two*\n", "_one_**two**\n"] {
+        let formatted = formatter::format(input);
+        assert!(
+            engine.lint_content(&formatted).unwrap().is_empty(),
+            "{formatted}"
+        );
+        assert_eq!(formatter::format(&formatted), formatted);
+        let violations = engine.lint_content(input).unwrap();
+        let fixes: Vec<_> = violations.iter().filter_map(|v| v.fix.clone()).collect();
+        if !input.starts_with("~~~") {
+            assert_eq!(
+                Fixer::new().apply_fixes_to_content(input, &fixes).unwrap(),
+                formatted
+            );
+        }
+    }
+}
+
+#[test]
 fn unicode_line_length_diagnostic_uses_a_byte_column() {
     let config = Config {
         default_enabled: false,
