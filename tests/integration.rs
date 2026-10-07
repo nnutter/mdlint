@@ -129,6 +129,34 @@ fn default_list_indentation_check_accepts_wide_ordered_parents() {
 }
 
 #[test]
+fn emphasis_fixes_do_not_change_reference_identities() {
+    for (style, source, target) in [("asterisk", "_", "*"), ("underscore", "*", "_")] {
+        let strong = source.repeat(2);
+        let input = format!(
+            "[foo {source}bar{source}]: /guide\n[foo {strong}bar{strong}]: /strong\n\nRead [foo {source}bar{source}] and [foo {strong}bar{strong}][] and {source}prose{source}.\n"
+        );
+        let expected = input.replace(
+            &format!("{source}prose{source}"),
+            &format!("{target}prose{target}"),
+        );
+        let config: Config = toml::from_str(&format!("default_enabled = false\n[rules.MD049]\nstyle = \"{style}\"\n[rules.MD050]\nstyle = \"{style}\"\n")).unwrap();
+        let engine = LintEngine::new(config);
+        let fixes: Vec<_> = engine
+            .lint_content(&input)
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.fix.clone())
+            .collect();
+        let fixed = Fixer::new().apply_fixes_to_content(&input, &fixes).unwrap();
+        assert_eq!(fixed, expected);
+        assert!(engine.lint_content(&fixed).unwrap().is_empty());
+        if style == "asterisk" {
+            assert_eq!(mdlint::formatter::format(&input), expected);
+        }
+    }
+}
+
+#[test]
 fn optional_policies_still_accept_explicit_configuration() {
     for (rule, content, settings) in [
         (

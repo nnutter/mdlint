@@ -31,19 +31,21 @@ impl Rule for MD049 {
         let mut violations = Vec::new();
         let mut first_style: Option<char> = None;
 
-        // Get byte ranges that are in code (more precise than line numbers)
         let code_ranges = parser.get_code_ranges();
-
-        // Helper function to check if a position is within code
-        let is_in_code = |line_num: usize, byte_offset: usize| -> bool {
+        let reference_ranges = super::emphasis::reference_identity_ranges(parser);
+        let is_protected = |line_num: usize, byte_offset: usize| -> bool {
             let absolute_offset = parser.line_offset_to_absolute(line_num, byte_offset);
             code_ranges
                 .iter()
+                .chain(reference_ranges.iter())
                 .any(|range| range.contains(&absolute_offset))
         };
 
         for (line_num, line) in parser.lines().iter().enumerate() {
             let line_number = line_num + 1;
+            if parser.get_ref_def_line_numbers().contains(&line_number) {
+                continue;
+            }
 
             // Look for emphasis patterns: *text* or _text_ (not ** or __)
             let chars: Vec<char> = line.chars().collect();
@@ -83,8 +85,8 @@ impl Rule for MD049 {
                                     || !chars.get(j + 1).is_some_and(|c| c.is_alphanumeric());
 
                                 if !close_is_strong && can_close {
-                                    // Skip if this emphasis is inside code
-                                    if is_in_code(
+                                    // Reference identity depends on the source markers.
+                                    if is_protected(
                                         line_number,
                                         char_offsets.get(i).copied().unwrap_or(line.len()),
                                     ) {

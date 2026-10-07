@@ -1,17 +1,47 @@
 use crate::markdown::MarkdownParser;
 use crate::types::{Fix, Violation};
-use pulldown_cmark::{Event, Tag, TagEnd};
+use pulldown_cmark::{Event, LinkType, Tag, TagEnd};
+use std::ops::Range;
+
+pub(super) fn reference_identity_ranges(parser: &MarkdownParser) -> Vec<Range<usize>> {
+    parser
+        .parse_with_offsets()
+        .filter_map(|(event, range)| {
+            matches!(
+                event,
+                Event::Start(
+                    Tag::Link {
+                        link_type: LinkType::Shortcut | LinkType::Collapsed,
+                        ..
+                    } | Tag::Image {
+                        link_type: LinkType::Shortcut | LinkType::Collapsed,
+                        ..
+                    }
+                )
+            )
+            .then_some(range)
+        })
+        .collect()
+}
 
 pub(super) fn canonical_violations(
     parser: &MarkdownParser,
     strong: bool,
     rule: &str,
 ) -> Vec<Violation> {
+    let reference_ranges = reference_identity_ranges(parser);
     let mut spans = Vec::new();
     let mut previous_end = false;
     let mut previous_marker = "";
     let mut violations = Vec::new();
     for (event, range) in parser.parse_with_offsets() {
+        if reference_ranges
+            .iter()
+            .any(|label| label.contains(&range.start))
+        {
+            previous_end = false;
+            continue;
+        }
         let is_end = matches!(event, Event::End(TagEnd::Emphasis | TagEnd::Strong));
         match event {
             Event::Start(Tag::Emphasis | Tag::Strong) => {
