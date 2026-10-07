@@ -190,34 +190,13 @@ fn should_use_color(color: &TerminalColor) -> bool {
     }
 }
 
-#[expect(clippy::similar_names)] // `fixer` and `fixes` are clearly distinct: one is the engine, one is the data
 fn apply_fixes(lint_result: &LintResult) -> Result<()> {
     let fixer = Fixer::new();
 
     for file_result in &lint_result.file_results {
-        let fixes: Vec<_> = file_result
-            .violations
-            .iter()
-            .filter_map(|v| v.fix.clone())
-            .collect();
-
-        if fixes.is_empty() {
-            continue;
-        }
-
-        let content = fs::read_to_string(&file_result.path)?;
-        match fixer.apply_fixes_to_content(&content, &fixes) {
-            Ok(fixed_content) => {
-                fs::write(&file_result.path, fixed_content)?;
-                eprintln!("Fixed: {}", file_result.path.display());
-            }
-            Err(e) => {
-                eprintln!(
-                    "Failed to apply fixes to {}: {}",
-                    file_result.path.display(),
-                    e
-                );
-            }
+        if file_result.violations.iter().any(|v| v.fix.is_some()) {
+            fixer.apply_file_fixes(file_result)?;
+            eprintln!("Fixed: {}", file_result.path.display());
         }
     }
 

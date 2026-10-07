@@ -645,6 +645,27 @@ fn check_without_fix_does_not_modify_file() {
 }
 
 #[test]
+fn check_reports_fix_failures_as_runtime_errors() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("doc.md");
+    let original = "Text\n# Heading\nText\n";
+    fs::write(&file, original).unwrap();
+    let output = Command::new(mdlint_bin())
+        .args(["--no-config", "check", "--select", "MD022", "--fix"])
+        .arg(&file)
+        .current_dir(dir.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("overlapping fix ranges"), "{stderr}");
+    assert_eq!(fs::read_to_string(file).unwrap(), original);
+}
+
+#[test]
 fn check_with_fix_corrects_violations_and_exits_1() {
     // `check --fix` applies inline fixes but still exits 1 because violations
     // were present (exit code reflects the pre-fix lint result).
