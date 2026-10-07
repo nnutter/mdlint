@@ -314,6 +314,12 @@ fn inline_code_content_preserved() {
 }
 
 #[test]
+fn adjacent_emphasis_keeps_distinct_delimiters() {
+    assert_formats_to("_¡_*0*\n", "*¡*_0_\n");
+    assert_formats_to("_one_*two*\n", "*one*_two_\n");
+}
+
+#[test]
 fn link_and_image_preserved() {
     assert_formats_to(
         "[link](https://example.com) and ![img](pic.png)\n",

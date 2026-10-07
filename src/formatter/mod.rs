@@ -119,6 +119,8 @@ struct FormatterState {
 
     // Link/image stack: stores (dest_url, title) from Start until End.
     link_stack: Vec<(String, String)>,
+    emphasis_delimiters: Vec<&'static str>,
+    previous_was_emphasis_end: bool,
 
     // Set by the outer format() loop before each event: true when the
     // immediately following event is Start(List(None)).  Used to detect
@@ -152,6 +154,8 @@ impl FormatterState {
             code_block_fence: String::new(),
             list_item_widths: Vec::new(),
             link_stack: Vec::new(),
+            emphasis_delimiters: Vec::new(),
+            previous_was_emphasis_end: false,
             next_is_unordered_list: false,
             next_text_char: None,
             table_alignments: Vec::new(),
@@ -163,6 +167,7 @@ impl FormatterState {
     }
 
     fn process(&mut self, event: Event<'_>) {
+        let is_emphasis_end = matches!(event, Event::End(TagEnd::Emphasis | TagEnd::Strong));
         match event {
             Event::Start(tag) => self.on_start(tag),
             Event::End(tag) => self.on_end(tag),
@@ -200,6 +205,20 @@ impl FormatterState {
             }
             _ => {}
         }
+        self.previous_was_emphasis_end = is_emphasis_end;
+    }
+
+    fn start_emphasis(&mut self, strong: bool) {
+        // Adjacent sibling spans can merge or stop parsing when both use '*'.
+        let alternate = self.previous_was_emphasis_end && self.inline.ends_with('*');
+        let delimiter = match (strong, alternate) {
+            (false, false) => "*",
+            (false, true) => "_",
+            (true, false) => "**",
+            (true, true) => "__",
+        };
+        self.emphasis_delimiters.push(delimiter);
+        self.inline.push_str(delimiter);
     }
 
     #[allow(clippy::too_many_lines)] // exhaustive match over pulldown-cmark Tag variants
@@ -298,8 +317,8 @@ impl FormatterState {
                 self.write_bq_prefix();
                 self.out.push_str(&marker);
             }
-            Tag::Emphasis => self.inline.push('*'),
-            Tag::Strong => self.inline.push_str("**"),
+            Tag::Emphasis => self.start_emphasis(false),
+            Tag::Strong => self.start_emphasis(true),
             Tag::Strikethrough => self.inline.push_str("~~"),
             Tag::Link {
                 dest_url, title, ..
@@ -423,8 +442,11 @@ impl FormatterState {
                     }
                     self.in_tight_item = false;
                 }
-            TagEnd::Emphasis => self.inline.push('*'),
-            TagEnd::Strong => self.inline.push_str("**"),
+            TagEnd::Emphasis | TagEnd::Strong => {
+                self.inline.push_str(
+                    self.emphasis_delimiters.pop().expect("emphasis start precedes end"),
+                );
+            }
             TagEnd::Strikethrough => self.inline.push_str("~~"),
             TagEnd::Link | TagEnd::Image => {
                 if let Some((dest, title)) = self.link_stack.pop() {

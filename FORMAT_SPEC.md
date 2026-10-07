@@ -140,7 +140,8 @@ present in the source; it does not infer or remove language tags.
 
 ### Emphasis (MD049)
 
-Always use `*` for emphasis (italic). Never `_`.
+Use `*` for emphasis (italic) by default.
+Use `_` for an adjacent emphasis span when asterisks would merge the delimiters and change the parsed content.
 
 ```markdown
 This is *important*.
@@ -150,7 +151,8 @@ Exception: underscores inside words (snake_case identifiers) are not emphasis an
 
 ### Strong Emphasis (MD050)
 
-Always use `**` for strong (bold). Never `__`.
+Use `**` for strong (bold) by default.
+Use `__` for an adjacent strong span when asterisks would merge the delimiters and change the parsed content.
 
 ```markdown
 This is **critical**.
