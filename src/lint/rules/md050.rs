@@ -25,6 +25,9 @@ impl Rule for MD050 {
             .and_then(|v| v.as_str())
             .unwrap_or("asterisk");
 
+        if style == "asterisk" {
+            return super::emphasis::canonical_violations(parser, true, self.name());
+        }
         let mut violations = Vec::new();
         let mut first_style: Option<&str> = None;
 
