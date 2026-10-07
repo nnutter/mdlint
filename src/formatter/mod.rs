@@ -403,7 +403,6 @@ impl FormatterState {
                 self.code_content_start = self.out.len();
             }
             Tag::List(start) => {
-                self.list_item_widths.push(0);
                 if self.list_depth == 0 {
                     self.emit_blank_if_needed();
                 } else {
@@ -414,7 +413,7 @@ impl FormatterState {
                     // (e.g. `Text("Item 1")` in `- Item 1\n  - Nested`).
                     if self.in_tight_item && !self.inline.is_empty() {
                         let text = std::mem::take(&mut self.inline);
-                        let prefix = "  ".repeat(self.list_depth);
+                        let prefix = self.list_continuation_prefix();
                         self.flush_inline_text(&text, &prefix);
                         self.in_tight_item = false;
                     } else if self.in_tight_item {
@@ -429,6 +428,7 @@ impl FormatterState {
                 if self.list_depth > 0 && start.is_some_and(|number| number != 1) {
                     self.out.push('\n');
                 }
+                self.list_item_widths.push(0);
                 self.list_depth += 1;
                 self.list_starts.push(start);
             }
@@ -439,7 +439,14 @@ impl FormatterState {
                     self.emit_blank_if_needed();
                 }
                 self.in_tight_item = true;
-                let indent = "  ".repeat(self.list_depth.saturating_sub(1));
+                let parent_width = self
+                    .list_item_widths
+                    .iter()
+                    .rev()
+                    .nth(1)
+                    .copied()
+                    .unwrap_or(0);
+                let indent = " ".repeat(parent_width);
                 let marker = match self.list_starts.last_mut() {
                     Some(Some(n)) => {
                         let s = format!("{indent}{n}. ");
@@ -595,7 +602,7 @@ impl FormatterState {
                         // Empty tight item: the marker was already written; just terminate the line.
                         self.out.push('\n');
                     } else {
-                        let prefix = "  ".repeat(self.list_depth);
+                        let prefix = self.list_continuation_prefix();
                         self.flush_inline_text(&text, &prefix);
                     }
                     self.in_tight_item = false;
