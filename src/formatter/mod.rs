@@ -1,3 +1,5 @@
+mod sentences;
+
 use std::fmt::Write as _;
 use std::ops::Range;
 
@@ -10,7 +12,8 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser,
 /// - Has exactly one blank line between top-level block elements
 /// - Uses ATX-style headings
 /// - Uses `-` for unordered list markers
-/// - Uses backtick fences for code blocks
+/// - Uses safe backtick or tilde fences for code blocks
+/// - Adds conservative sentence breaks without width-based reflow
 #[must_use]
 pub fn format(input: &str) -> String {
     if input.trim().is_empty() {
@@ -897,7 +900,7 @@ impl FormatterState {
     /// Each line in `text` gets the blockquote prefix prepended (except the first,
     /// which follows whatever was already written on the current output line).
     fn flush_inline_text(&mut self, text: &str, continuation_prefix: &str) {
-        let text = strip_terminal_hard_break(text);
+        let text = sentences::format(strip_terminal_hard_break(text), mk_options());
         let bq = "> ".repeat(self.bq_depth);
         let mut lines = text.split('\n').peekable();
 

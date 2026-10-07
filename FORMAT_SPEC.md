@@ -11,6 +11,7 @@ formatter implementation work. Any ambiguity about what the formatter should pro
 2. **Idempotency is a hard requirement.** Formatting an already-formatted file produces no changes.
 3. **Semantic equivalence.** The formatter never changes meaning — only surface syntax.
 4. **No configuration.** The formatter is opinionated. If you disagree with a choice, open an issue.
+5. **Keep edits local.** A content edit must not renumber later items, resize unrelated table rows, or reflow prose to a width limit.
 
 ---
 
@@ -182,6 +183,23 @@ expanding to the next 4-space tab stop.
 
 Tabs inside fenced code blocks and indented code blocks are preserved verbatim.
 
+### Prose Sentence Boundaries
+
+Prefer one sentence per source line where the boundary is unambiguous to the formatter.
+Add a soft line break after `.`, `!`, or `?` followed by horizontal whitespace and an uppercase sentence start.
+Closing quotes and parentheses can occur before the whitespace, and opening quotes can precede the next sentence.
+Do not reflow to a column limit or join existing source lines.
+Preserve existing clause breaks and hard line breaks.
+
+Treat common abbreviations, initials, decimals, ellipses, URLs, and filenames as ambiguous rather than guessing their sentence boundaries.
+Leave lowercase and numeric sentence starts unchanged.
+Do not split inside emphasis, strikethrough, code spans, links, images, or reference labels.
+Leave paragraphs containing inline HTML unchanged.
+Headings, table cells, code blocks, and reference definitions do not receive sentence breaks.
+
+Apply the same prose policy inside list items, blockquotes, and footnotes.
+Indent new continuation lines by the emitted list marker width or footnote prefix so they stay in the original block.
+
 ### Multiple Consecutive Blank Lines (MD012)
 
 At most one blank line between any two block elements. Multiple consecutive blank lines are
@@ -261,8 +279,8 @@ verbatim. The formatter does not modify front matter content.
 
 ## What the Formatter Does NOT Change
 
-- **Paragraph text.** The formatter does not reflow paragraphs to a line length. Line breaks within
-  paragraphs are preserved (soft wrapping is the renderer's job, not the formatter's).
+- **Paragraph content.** Do not change words or punctuation.
+  Preserve existing soft and hard breaks, and add conservative sentence-oriented soft breaks without width-based reflow.
 - **Code block contents.** The content inside fenced or indented code blocks is preserved
   character-for-character, including indentation, tabs, and blank lines.
 - **Inline code.** The content inside backtick spans is not modified.
