@@ -36,3 +36,4 @@ cc b2d4fabb9c4ff31f5285e40382825f48b74de9858fb3ff0e9ea472fd0571061e # shrinks to
 cc 107c02b8094a50bd75ed741328baffedac501b8b4de2b35c629d08b6b7815b06 # shrinks to s = "_¡_*0*"
 cc 0d33ee6d292361ff61e12325c16622d48cc1cd65a653d5a3c99e293373d7e15e # shrinks to input = "3. 😀\n8. second\n\n* é\n  + nested\n* second\n"
 cc af791d06919790cff0e06e0c94e55fd9a446a7ab70db852af61fdbe1ab520ff5 # shrinks to input = "é[^note]\n\n[^note]: body\n\n    😀\n"
+cc 10591c1ec454fee280a7b274dae5dd5994e4bfa9d4769745eb0c16b93132dbe8 # shrinks to s = "\t¡\r"

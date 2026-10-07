@@ -1,4 +1,5 @@
 use std::fmt::Write as _;
+use std::ops::Range;
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
@@ -112,6 +113,8 @@ struct FormatterState {
     in_code_block: bool,
     code_block_indent: String,
     code_block_fence: String,
+    code_content_start: usize,
+    verbatim_ranges: Vec<Range<usize>>,
 
     // Per-depth item marker widths (e.g. 3 for "1. ", 2 for "- "), used to
     // compute the continuation indent for code blocks inside list items.
@@ -153,6 +156,8 @@ impl FormatterState {
             in_code_block: false,
             code_block_indent: String::new(),
             code_block_fence: String::new(),
+            code_content_start: 0,
+            verbatim_ranges: Vec::new(),
             list_item_widths: Vec::new(),
             link_stack: Vec::new(),
             emphasis_delimiters: Vec::new(),
@@ -273,6 +278,7 @@ impl FormatterState {
                 self.out.push_str(&lang);
                 self.out.push('\n');
                 self.in_code_block = true;
+                self.code_content_start = self.out.len();
             }
             Tag::List(start) => {
                 self.list_item_widths.push(0);
@@ -418,6 +424,7 @@ impl FormatterState {
                 if !self.out.ends_with('\n') {
                     self.out.push('\n');
                 }
+                self.verbatim_ranges.push(self.code_content_start..self.out.len());
                 self.write_bq_prefix();
                 self.out.push_str(&self.code_block_indent.clone());
                 self.out.push_str(&self.code_block_fence);
@@ -549,6 +556,8 @@ impl FormatterState {
 
     fn on_text(&mut self, text: &str) {
         if self.in_code_block {
+            let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+            let text = normalized.as_str();
             // Code block content goes directly to output, with list
             // continuation indent re-added (pulldown-cmark strips it).
             // When inside a blockquote, each content line also needs the
@@ -747,7 +756,19 @@ impl FormatterState {
         let s = std::mem::take(&mut self.out);
         let mut result: Vec<&str> = Vec::new();
         let mut prev_blank = false;
-        for line in s.lines() {
+        let mut offset = 0;
+        for raw_line in s.split_inclusive('\n') {
+            let preserve = self
+                .verbatim_ranges
+                .iter()
+                .any(|range| range.contains(&offset));
+            offset += raw_line.len();
+            let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+            if preserve {
+                result.push(line);
+                prev_blank = false;
+                continue;
+            }
             let line = line.trim_end();
             if line.is_empty() {
                 if !prev_blank {

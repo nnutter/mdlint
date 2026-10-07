@@ -111,11 +111,15 @@ proptest! {
         }
     }
 
-    /// Lines in formatted output must not have trailing whitespace.
+    /// Prose lines must not have trailing whitespace; code contents are verbatim.
     #[test]
     fn formatter_no_trailing_whitespace(s in ".*") {
         let out = formatter::format(&s);
-        for line in out.lines() {
+        let parser = mdlint::markdown::MarkdownParser::new(&out);
+        for (index, line) in out.lines().enumerate() {
+            if parser.get_code_block_line_numbers().contains(&(index + 1)) {
+                continue;
+            }
             prop_assert!(
                 !line.ends_with(' ') && !line.ends_with('\t'),
                 "line has trailing whitespace: {line:?}"

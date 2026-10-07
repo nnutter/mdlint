@@ -161,8 +161,9 @@ This is **critical**.
 
 ### Trailing Whitespace (MD009)
 
-No trailing spaces or tabs on any line. Hard line breaks (two trailing spaces before a newline) are
-replaced with a `\` continuation character, then the trailing spaces are removed.
+No trailing spaces or tabs on prose lines.
+Code block contents are exempt and retain their whitespace and blank lines.
+Hard line breaks (two trailing spaces before a newline) are replaced with a `\` continuation character, then the trailing spaces are removed.
 
 ```markdown
 Line one\
@@ -268,7 +269,7 @@ Given any CommonMark-compliant input:
 1. `format(input)` produces output that is semantically equivalent to `input`.
 2. `format(format(input)) == format(input)` (idempotency).
 3. `format(input)` ends with exactly one `\n`.
-4. `format(input)` contains no trailing whitespace on any line.
+4. `format(input)` contains no trailing whitespace outside verbatim code and HTML.
 5. `format(input)` parses as valid CommonMark.
 
 ---
