@@ -848,28 +848,7 @@ impl FormatterState {
     /// Each line in `text` gets the blockquote prefix prepended (except the first,
     /// which follows whatever was already written on the current output line).
     fn flush_inline_text(&mut self, text: &str, continuation_prefix: &str) {
-        // Strip trailing hard-break markers (`\\\n`) preceded by only whitespace.
-        // A `\` before a line ending that is at the end of a block is re-parsed by
-        // pulldown-cmark as a literal `\`, not a hard break — so emitting `\\\n` at
-        // the end of a paragraph breaks idempotency (the formatter doubles the `\`
-        // on the second pass).  A trailing hard break is always a no-op: there is
-        // nothing on the "next line" for the break to separate.
-        let text = {
-            let s = text.trim_end_matches(|c: char| c != '\n' && c.is_whitespace());
-            // Strip a trailing hard-break marker only when the backslash run before
-            // `\n` is odd: even runs are content pairs (`\\` = literal `\`) and must
-            // not be removed.  An odd run = zero or more content pairs + one marker.
-            if let Some(stripped) = s.strip_suffix('\n') {
-                let run = stripped.chars().rev().take_while(|&c| c == '\\').count();
-                if run % 2 == 1 {
-                    &stripped[..stripped.len() - 1]
-                } else {
-                    text
-                }
-            } else {
-                text
-            }
-        };
+        let text = strip_terminal_hard_break(text);
         let bq = "> ".repeat(self.bq_depth);
         let mut lines = text.split('\n').peekable();
 
@@ -956,6 +935,19 @@ impl FormatterState {
         }
         format!("{trimmed}\n")
     }
+}
+
+/// A terminal hard break cannot separate any content and becomes a literal
+/// backslash on reparse. Preserve escaped content pairs but remove the marker.
+fn strip_terminal_hard_break(text: &str) -> &str {
+    let s = text.trim_end_matches(|c: char| c != '\n' && c.is_whitespace());
+    if let Some(stripped) = s.strip_suffix('\n') {
+        let run = stripped.chars().rev().take_while(|&c| c == '\\').count();
+        if run % 2 == 1 {
+            return &stripped[..stripped.len() - 1];
+        }
+    }
+    text
 }
 
 /// Collapse the break markers inside a heading's inline buffer to single spaces.
