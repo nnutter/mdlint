@@ -432,6 +432,17 @@ fn blockquote_preserved() {
 }
 
 #[test]
+fn definition_like_paragraph_text_does_not_create_references() {
+    for input in [
+        "Text\n[guide]: /example\n\nRead [guide].\n",
+        "Text\n  [guide]: /example\n\nRead [guide].\n",
+    ] {
+        let expected = "Text\n\\[guide]: /example\n\nRead [guide].\n";
+        assert_formats_to(input, expected);
+    }
+}
+
+#[test]
 fn changing_a_table_cell_does_not_resize_other_rows() {
     let before = "| Name | Count |\n| :--- | ---: |\n| short | 1 |\n| other | 2 |\n";
     let after = "| Name | Count |\n| :--- | ---: |\n| a much longer name | 1 |\n| other | 2 |\n";

@@ -142,17 +142,27 @@ fn reference_definition_ranges(input: &str, parser: &Parser<'_>) -> Vec<Range<us
         })
         .collect();
     // The parser retains only the first definition of a repeated label.
+    // Search omitted lines, not visible prose that happens to resemble a definition.
     let protected: Vec<_> = Parser::new_ext(input, mk_options())
         .into_offset_iter()
         .filter_map(|(event, range)| {
-            matches!(event, Event::Start(Tag::CodeBlock(_) | Tag::HtmlBlock)).then_some(range)
+            matches!(
+                event,
+                Event::Start(Tag::CodeBlock(_) | Tag::HtmlBlock)
+                    | Event::Text(_)
+                    | Event::Code(_)
+                    | Event::InlineHtml(_)
+            )
+            .then_some(range)
         })
         .collect();
     let mut offset = 0;
     for line in input.split_inclusive('\n') {
-        if !ranges.iter().any(|range| range.contains(&offset))
-            && !protected.iter().any(|range| range.contains(&offset))
-            && line.contains("]:")
+        if line.contains("]:")
+            && !ranges.iter().any(|range| range.contains(&offset))
+            && !protected
+                .iter()
+                .any(|range| range.start < offset + line.len() && range.end > offset)
         {
             let candidate = Parser::new_ext(&input[offset..], mk_options());
             for (_, definition) in candidate.reference_definitions().iter() {
