@@ -320,6 +320,17 @@ fn adjacent_emphasis_keeps_distinct_delimiters() {
 }
 
 #[test]
+fn literal_asterisks_do_not_become_emphasis() {
+    for (input, expected) in [
+        ("é \\*literal\\*\n", "é \\*literal\\*\n"),
+        ("é \\*\\*literal\\*\\*\n", "é \\*\\*literal\\*\\*\n"),
+        ("_\\*literal\\*_\n", "*\\*literal\\**\n"),
+    ] {
+        assert_formats_to(input, expected);
+    }
+}
+
+#[test]
 fn link_and_image_preserved() {
     assert_formats_to(
         "[link](https://example.com) and ![img](pic.png)\n",
