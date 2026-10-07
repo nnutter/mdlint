@@ -124,7 +124,10 @@ Lists are preceded and followed by exactly one blank line (same rule as other bl
 
 ### Code Fences (MD048)
 
-Always use backticks (`` ` ``). Always use exactly three backticks. Never tildes (`~~~`).
+Use three backticks (`` ` ``) by default.
+Use a longer fence when code contains a run of three or more backticks.
+The fence must be longer than every run of its marker character in the code.
+Use tilde fences when the language information contains a backtick, because CommonMark forbids backticks in the information string of a backtick fence.
 
 ````markdown
 ```language

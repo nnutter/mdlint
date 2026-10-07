@@ -289,6 +289,23 @@ fn code_block_content_preserved_verbatim() {
 }
 
 #[test]
+fn code_fences_cannot_close_on_their_own_content() {
+    for (input, expected) in [
+        ("~~~rust\n```\n~~~\n", "````rust\n```\n````\n"),
+        ("~~~rust\n````\n~~~\n", "`````rust\n````\n`````\n"),
+        ("~~~lang`tag\ncode\n~~~\n", "~~~lang`tag\ncode\n~~~\n"),
+        ("~~~~lang`tag\n~~~\n~~~~\n", "~~~~lang`tag\n~~~\n~~~~\n"),
+        ("> ~~~rust\n> ```\n> ~~~\n", "> ````rust\n> ```\n> ````\n"),
+        (
+            "- item\n\n  ~~~rust\n  ```\n  ~~~\n",
+            "- item\n\n  ````rust\n  ```\n  ````\n",
+        ),
+    ] {
+        assert_formats_to(input, expected);
+    }
+}
+
+#[test]
 fn inline_code_content_preserved() {
     assert_formats_to(
         "Use `_underscores_` and `* asterisks` in code spans.\n",
