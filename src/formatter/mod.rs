@@ -18,12 +18,14 @@ pub fn format(input: &str) -> String {
     }
 
     let mut state = FormatterState::new();
-    let events: Vec<Event<'_>> = Parser::new_ext(input, mk_options()).collect();
+    let events: Vec<_> = Parser::new_ext(input, mk_options())
+        .into_offset_iter()
+        .collect();
     let mut code_fences = code_block_fences(&events).into_iter();
 
     // Precompute per-event lookahead: is the *next* event Start(List(None))?
     let lookahead: Vec<bool> = (0..events.len())
-        .map(|i| matches!(events.get(i + 1), Some(Event::Start(Tag::List(None)))))
+        .map(|i| matches!(events.get(i + 1), Some((Event::Start(Tag::List(None)), _))))
         .collect();
 
     // Precompute the first character of the immediately following Text event, if
@@ -35,27 +37,29 @@ pub fn format(input: &str) -> String {
     // boundary, represented as None.
     let next_text_char: Vec<Option<char>> = (0..events.len())
         .map(|i| match events.get(i + 1) {
-            Some(Event::Text(t)) => t.chars().next(),
+            Some((Event::Text(t), _)) => t.chars().next(),
             _ => None,
         })
         .collect();
 
-    for ((event, next_is_ul), next_char) in events.into_iter().zip(lookahead).zip(next_text_char) {
+    for (((event, range), next_is_ul), next_char) in
+        events.into_iter().zip(lookahead).zip(next_text_char)
+    {
         if matches!(event, Event::Start(Tag::CodeBlock(_))) {
             state.code_block_fence = code_fences.next().expect("one fence per code block");
         }
         state.next_is_unordered_list = next_is_ul;
         state.next_text_char = next_char;
-        state.process(event);
+        state.process(event, &input[range]);
     }
 
     state.finish()
 }
 
-fn code_block_fences(events: &[Event<'_>]) -> Vec<String> {
+fn code_block_fences(events: &[(Event<'_>, Range<usize>)]) -> Vec<String> {
     let mut fences = Vec::new();
     let mut current = None;
-    for event in events {
+    for (event, _) in events {
         match event {
             Event::Start(Tag::CodeBlock(kind)) => {
                 let marker = match kind {
@@ -182,10 +186,10 @@ impl FormatterState {
         }
     }
 
-    fn process(&mut self, event: Event<'_>) {
+    fn process(&mut self, event: Event<'_>, source: &str) {
         let is_emphasis_end = matches!(event, Event::End(TagEnd::Emphasis | TagEnd::Strong));
         match event {
-            Event::Start(tag) => self.on_start(tag),
+            Event::Start(tag) => self.on_start(tag, source),
             Event::End(tag) => self.on_end(tag),
             Event::Text(t) => self.on_text(&t),
             Event::Code(c) => self.emit_inline_code(&c),
@@ -233,7 +237,7 @@ impl FormatterState {
     }
 
     #[allow(clippy::too_many_lines)] // exhaustive match over pulldown-cmark Tag variants
-    fn on_start(&mut self, tag: Tag<'_>) {
+    fn on_start(&mut self, tag: Tag<'_>, _source: &str) {
         match tag {
             Tag::Paragraph => {
                 // Inside a list, don't emit a blank before the paragraph—
