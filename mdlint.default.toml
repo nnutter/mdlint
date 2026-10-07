@@ -16,8 +16,9 @@
 # requires no configuration. This file is for teams that want to disable
 # specific check rules or adjust a few rule parameters.
 
-# When true (default), every rule is enabled unless explicitly disabled below.
-# When false, only rules that have an [rules.MDxxx] section are active.
+# When true (default), the default rule profile is active.
+# Optional document policies remain disabled unless configured or selected.
+# When false, only explicitly enabled [rules.MDxxx] sections are active.
 default_enabled = true
 # Respect .gitignore files when discovering Markdown files. Disable only if
 # you are running mdlint outside a git repository or want to lint ignored files.
@@ -90,7 +91,7 @@ strict = false
 #              flagged. `mdlint format` preserves tabs inside code blocks, so
 #              set this to false to avoid spurious check violations.
 [rules.MD010]
-code_blocks = true
+code_blocks = false
 
 # MD012 — Multiple consecutive blank lines
 # maximum: the highest number of consecutive blank lines permitted.
@@ -105,6 +106,7 @@ maximum = 1
 # tables:              when true, table rows are also checked.
 # headings:            when true, heading lines are also checked.
 [rules.MD013]
+enabled = false
 line_length = 120
 heading_line_length = 80
 code_blocks = true
@@ -117,7 +119,7 @@ headings = true
 #                When false, all duplicate headings anywhere in the document
 #                are flagged.
 [rules.MD024]
-siblings_only = false
+siblings_only = true
 
 # MD025 — Multiple top-level headings in the same document
 # front_matter_title: case-insensitive regular expression matched against each
@@ -129,6 +131,7 @@ front_matter_title = '^\s*"?title"?\s*[:=]'
 # MD026 — Trailing punctuation in headings
 # punctuation: the set of characters that are not allowed at the end of a heading.
 [rules.MD026]
+enabled = false
 punctuation = ".,;:!"
 
 # MD029 — Ordered list item prefix
@@ -154,6 +157,7 @@ ol_multi = 1
 # allowed_elements: HTML tag names (without angle brackets) that are permitted.
 #                   An empty list (default) disallows all raw HTML elements.
 [rules.MD033]
+enabled = false
 allowed_elements = []
 
 # MD035 — Horizontal rule style
@@ -176,8 +180,13 @@ punctuation = ".,;:!?。，；：！？"
 # front_matter_title: as for MD025; a matching front matter line satisfies the
 #   rule on its own.
 [rules.MD041]
+enabled = false
 level = 1
 front_matter_title = '^\s*"?title"?\s*[:=]'
+
+# MD043 — Required heading structure is an opt-in document-template policy.
+[rules.MD043]
+enabled = false
 
 # MD044 — Proper names should have correct capitalisation
 # names:       list of proper names that must always appear with this exact casing.

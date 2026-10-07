@@ -22,7 +22,7 @@ impl Rule for MD010 {
         let code_blocks = config
             .and_then(|c| c.get("code_blocks"))
             .and_then(serde_json::Value::as_bool)
-            .unwrap_or(true);
+            .unwrap_or(false);
 
         let mut violations = Vec::new();
         let code_block_lines = parser.get_code_block_line_numbers();
@@ -92,7 +92,7 @@ mod tests {
     fn test_hard_tabs() {
         let content = indoc! {"
             Line 1
-            \tLine 2
+            Text\tLine 2
             Line 3"};
         let parser = MarkdownParser::new(content);
         let rule = MD010;
@@ -100,7 +100,7 @@ mod tests {
 
         assert_eq!(
             rendered(&violations),
-            ["test.md:2:1: MD010 Hard tabs found"]
+            ["test.md:2:5: MD010 Hard tabs found"]
         );
     }
 
@@ -115,9 +115,10 @@ mod tests {
         let rule = MD010;
         let violations = rule.check(&parser, None);
 
-        // By default, code_blocks is true, so tabs in code blocks are violations
+        assert!(violations.is_empty());
+        let config = serde_json::json!({"code_blocks": true});
         assert_eq!(
-            rendered(&violations),
+            rendered(&rule.check(&parser, Some(&config))),
             ["test.md:3:1: MD010 Hard tabs found"]
         );
     }
@@ -149,7 +150,7 @@ mod tests {
         let content = indoc! {"
             # Heading
 
-            \tTabbed line
+            Text\tTabbed line
         "};
         let parser = MarkdownParser::new(content);
         let rule = MD010;

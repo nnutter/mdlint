@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub(crate) const OPT_IN_RULES: &[&str] = &["MD013", "MD026", "MD033", "MD041", "MD043"];
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Config {
     /// Rule configuration: rule name -> config
@@ -87,11 +89,19 @@ impl Config {
     /// `ignore` unconditionally force-disables the listed rules, overriding both the config
     /// file and `--select`.
     ///
-    /// Empty `select`/`ignore` is a no-op.
+    /// `ALL` enables the default profile and opts into optional rules, retaining
+    /// explicit rule settings. Empty `select`/`ignore` is a no-op.
     #[must_use]
     pub fn apply_rule_filters(mut self, select: &[String], ignore: &[String]) -> Self {
         let select_all = select.iter().any(|code| code.eq_ignore_ascii_case("all"));
-        if !select.is_empty() && !select_all {
+        if select_all {
+            self.default_enabled = Some(true);
+            for rule in OPT_IN_RULES {
+                self.rules
+                    .entry((*rule).to_owned())
+                    .or_insert(RuleConfig::Enabled(true));
+            }
+        } else if !select.is_empty() {
             self.default_enabled = Some(false);
             for code in select {
                 self.rules
@@ -132,10 +142,13 @@ mod tests {
     }
 
     #[test]
-    fn select_all_is_noop() {
+    fn select_all_enables_optional_checks() {
         let config = Config::default().apply_rule_filters(&["ALL".to_owned()], &[]);
-        assert!(config.default_enabled());
-        assert!(config.rules.is_empty());
+        let content = format!("{}\n", "word ".repeat(30));
+        let violations = crate::lint::LintEngine::new(config)
+            .lint_content(&content)
+            .unwrap();
+        assert!(violations.iter().any(|v| v.rule == "MD013"));
     }
 
     #[test]
