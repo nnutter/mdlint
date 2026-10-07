@@ -111,7 +111,8 @@ Inserting an item must not renumber unrelated source lines.
 
 ### List Indentation (MD007)
 
-Nested list items are indented by 2 spaces relative to their parent marker.
+Align nested markers and continuation lines with the parent's content column.
+An unordered marker uses 2 spaces; an ordered marker uses its emitted width, including the number, period, and space.
 
 ```markdown
 - Top level
@@ -121,7 +122,10 @@ Nested list items are indented by 2 spaces relative to their parent marker.
 
 ### Blank Lines Around Lists (MD032)
 
-Lists are preceded and followed by exactly one blank line (same rule as other block elements).
+Top-level lists are preceded and followed by exactly one blank line (same rule as other block elements).
+Preserve tight or loose list semantics.
+Separate items in loose lists with one blank line, including when an item ends with a nested block.
+Keep separate paragraphs in an item separated and indented so they cannot become text in a nested child item.
 
 ### Code Fences (MD048)
 

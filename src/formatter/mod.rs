@@ -24,6 +24,7 @@ pub fn format(input: &str) -> String {
         .peekable();
     let events: Vec<_> = parser.into_offset_iter().collect();
     let mut code_fences = code_block_fences(&events).into_iter();
+    let mut loose_lists = list_looseness(&events).into_iter();
 
     // Precompute per-event lookahead: is the *next* event Start(List(None))?
     let lookahead: Vec<bool> = (0..events.len())
@@ -82,6 +83,11 @@ pub fn format(input: &str) -> String {
         if matches!(event, Event::Start(Tag::CodeBlock(_))) {
             state.code_block_fence = code_fences.next().expect("one fence per code block");
         }
+        if matches!(event, Event::Start(Tag::List(_))) {
+            state
+                .list_is_loose
+                .push(loose_lists.next().expect("one looseness value per list"));
+        }
         state.next_is_unordered_list = next_is_ul;
         state.next_text_char = next_char;
         state.process(event, &input[range]);
@@ -91,6 +97,31 @@ pub fn format(input: &str) -> String {
         state.emit_reference_definitions(&input[definition]);
     }
     state.finish()
+}
+
+// Paragraph events identify loose lists, but the first item can contain only
+// nested blocks. Determine looseness before writing any item markers.
+fn list_looseness(events: &[(Event<'_>, Range<usize>)]) -> Vec<bool> {
+    let mut lists = Vec::new();
+    let mut stack = Vec::new();
+    for (event, _) in events {
+        match event {
+            Event::Start(Tag::List(_)) => {
+                stack.push(lists.len());
+                lists.push(false);
+            }
+            Event::Start(Tag::Paragraph) => {
+                if let Some(&index) = stack.last() {
+                    lists[index] = true;
+                }
+            }
+            Event::End(TagEnd::List(_)) => {
+                stack.pop();
+            }
+            _ => {}
+        }
+    }
+    lists
 }
 
 fn reference_definition_ranges(input: &str, parser: &Parser<'_>) -> Vec<Range<usize>> {
@@ -227,6 +258,7 @@ struct FormatterState {
     list_depth: usize,
     /// Start number for ordered list at each depth; None = unordered.
     list_starts: Vec<Option<u64>>,
+    list_is_loose: Vec<bool>,
     /// True when a list item was just opened but no Paragraph started yet (tight list).
     in_tight_item: bool,
 
@@ -277,6 +309,7 @@ impl FormatterState {
             needs_blank: false,
             list_depth: 0,
             list_starts: Vec::new(),
+            list_is_loose: Vec::new(),
             in_tight_item: false,
             bq_depth: 0,
             inline: String::new(),
@@ -438,6 +471,11 @@ impl FormatterState {
             Tag::Item => {
                 // For loose lists, End(Paragraph) sets needs_blank = true.
                 // Emit that blank before the next item marker.
+                if self.list_is_loose.last() == Some(&true)
+                    && self.list_item_widths.last().is_some_and(|width| *width > 0)
+                {
+                    self.needs_blank = true;
+                }
                 if self.list_depth > 0 {
                     self.emit_blank_if_needed();
                 }
@@ -583,6 +621,7 @@ impl FormatterState {
             TagEnd::List(_) => {
                 self.list_depth -= 1;
                 self.list_starts.pop();
+                self.list_is_loose.pop();
                 self.list_item_widths.pop();
                 if self.list_depth == 0 {
                     if self.next_is_unordered_list {
