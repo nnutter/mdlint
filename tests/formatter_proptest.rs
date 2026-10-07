@@ -7,6 +7,13 @@ fn markdown_documents() -> impl Strategy<Value = String> {
     let block = prop_oneof![
         word.prop_map(|text| format!("{text}\n=======")),
         word.prop_map(|text| format!("## {text} ##")),
+        word.prop_map(|text| format!("A {text} sentence. Another sentence! Last question?")),
+        word.prop_map(|text| format!("7. A {text} sentence. Another sentence!")),
+        word.prop_map(|text| format!(
+            "12. A {text} sentence. Another sentence!\n    - Child. Again."
+        )),
+        word.prop_map(|text| format!("[{text}. Another sentence.][label]\n\n[label]: /reference")),
+        word.prop_map(|text| format!("> A {text} sentence. Another sentence!")),
         word.prop_map(|text| format!("{text} _italic_ and __bold__ and \\*literal\\*.")),
         word.prop_map(|text| format!("_{text}_*second*")),
         word.prop_map(|text| format!("[{text}](https://example.com \"title\") ![alt](image.png)")),
@@ -44,7 +51,12 @@ fn semantic_events(input: &str) -> Vec<Event<'static>> {
             assert_eq!(parsed.next(), Some(Event::End(TagEnd::HtmlBlock)));
             continue;
         }
-        let mut event = event.into_static();
+        let mut event = if event == Event::SoftBreak {
+            // Prose soft breaks and spaces have the same rendered meaning.
+            Event::Text(" ".into())
+        } else {
+            event.into_static()
+        };
         match &mut event {
             // Fence syntax is not semantic.
             Event::Start(Tag::CodeBlock(kind @ CodeBlockKind::Indented)) => {
