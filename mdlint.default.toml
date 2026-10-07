@@ -209,11 +209,12 @@ style = "asterisk"
 style = "leading_and_trailing"
 
 # MD060 — Table column alignment
-# style: required alignment for all table columns.
+# style: table alignment policy.
+#   "any"        — preserve independent table and column alignments (default)
 #   "default"    — no alignment marker (---)
 #   "left"       — :---
 #   "right"      — ---:
 #   "center"     — :---:
 #   "consistent" — whatever alignment appears first in the file
 [rules.MD060]
-style = "consistent"
+style = "any"
