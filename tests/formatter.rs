@@ -277,6 +277,15 @@ fn ordered_list_preserved() {
 }
 
 #[test]
+fn list_item_paragraphs_keep_their_boundaries_and_indentation() {
+    assert_formats_to(
+        "* é\n  + nested\n* second\n\n    a\n",
+        "- é\n  - nested\n- second\n\n  a\n",
+    );
+    assert_formats_to("1. first\n\n   second\n", "1. first\n\n   second\n");
+}
+
+#[test]
 fn code_block_content_preserved_verbatim() {
     // Tabs and unusual indentation inside code blocks must survive unchanged.
     let input = indoc! {"
