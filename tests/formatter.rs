@@ -512,6 +512,81 @@ fn format_rewrites_file_in_place() {
 }
 
 #[test]
+fn cli_exclusions_apply_to_walked_and_explicit_files() {
+    for command in ["format", "check"] {
+        for source in ["cli", "config"] {
+            for pattern in [
+                "**/generated/**",
+                "docs/generated/**",
+                "**/skip.md",
+                "docs/generated",
+                "docs/generated/skip.md",
+                "absolute-directory",
+                "absolute-file",
+            ] {
+                let dir = TempDir::new().unwrap();
+                let generated = dir.path().join("docs/generated");
+                fs::create_dir_all(&generated).unwrap();
+                let skipped = generated.join("skip.md");
+                let kept = dir.path().join("docs/keep.md");
+                fs::write(&skipped, "* item\n").unwrap();
+                fs::write(&kept, "* item\n").unwrap();
+                let exclude = match pattern {
+                    "absolute-directory" => generated.to_str().unwrap(),
+                    "absolute-file" => skipped.to_str().unwrap(),
+                    _ => pattern,
+                };
+
+                let mut invocation = Command::new(mdlint_bin());
+                invocation
+                    .args([command, "docs", "docs/generated/skip.md"])
+                    .current_dir(dir.path())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+                if command == "check" {
+                    invocation.args(["--select", "MD004", "--fix"]);
+                }
+                if source == "cli" {
+                    invocation.args(["--no-config", "--exclude", exclude]);
+                } else {
+                    let config = dir.path().join("mdlint.toml");
+                    let value = toml::Value::String(exclude.to_owned());
+                    fs::write(&config, format!("exclude = [{value}]\n")).unwrap();
+                    invocation.args(["--config", config.to_str().unwrap()]);
+                }
+                let status = invocation.status().unwrap();
+                assert_eq!(status.code(), Some(i32::from(command == "check")));
+                assert_eq!(
+                    fs::read_to_string(&skipped).unwrap(),
+                    "* item\n",
+                    "{command}: {source}: {pattern}"
+                );
+                assert_eq!(
+                    fs::read_to_string(&kept).unwrap(),
+                    "- item\n",
+                    "{command}: {source}: {pattern}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn invalid_exclusion_globs_are_reported() {
+    let dir = TempDir::new().unwrap();
+    let output = Command::new(mdlint_bin())
+        .args(["--no-config", "format", "--exclude", "[unclosed"])
+        .current_dir(dir.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("Invalid glob pattern"), "{stderr}");
+}
+
+#[test]
 fn runtime_errors_are_reported_on_stderr() {
     let dir = TempDir::new().unwrap();
     let config = dir.path().join("invalid.toml");
