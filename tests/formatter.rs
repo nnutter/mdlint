@@ -310,6 +310,17 @@ fn code_block_content_preserved_verbatim() {
 }
 
 #[test]
+fn code_whitespace_is_not_prose_whitespace() {
+    for input in [
+        "```text\nline  \n\n\n\t\nlast\t\n```\n",
+        "- item\n\n  ```text\n  line  \n  \n  \n  last\t\n  ```\n",
+        "> ```text\n> line  \n> \n> \n> last\t\n> ```\n",
+    ] {
+        assert_formats_to(input, input);
+    }
+}
+
+#[test]
 fn code_fences_cannot_close_on_their_own_content() {
     for (input, expected) in [
         ("~~~rust\n```\n~~~\n", "````rust\n```\n````\n"),
