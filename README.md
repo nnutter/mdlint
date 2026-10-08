@@ -441,14 +441,14 @@ This must pass before submitting a pull request.
 ### Release process
 
 Releases use [`cargo-release`](https://github.com/crate-ci/cargo-release), which bumps all package manifests in sync
-and pushes the tag that triggers CI to build, package, and publish everything automatically:
+and pushes the tag that triggers CI to build binaries and publish a GitHub release:
 
 ```bash
 cargo release patch --execute   # or minor / major
 ```
 
-Once the tag is pushed, CI verifies manifest versions, builds binaries for all 7 platforms, and publishes to
-crates.io, PyPI, and npm via trusted publishing (no tokens required).
+Once the tag is pushed, CI verifies manifest versions, builds binaries for all 7 platforms, and publishes the GitHub release with those binaries attached.
+Package and container registries are not published to automatically.
 
 ## License
 

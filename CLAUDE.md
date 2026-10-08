@@ -124,8 +124,8 @@ src/
 - Pipeline stages: (1) fast checks in parallel — test, clippy, fmt; (2) dogfooding;
   (3) slow checks — build, compatibility, security audit
 - Job dependencies via `needs: [test, clippy, fmt]`
-- Three workflow files: `ci.yml` (reusable quality gates), `tag.yml` (production release),
-  `release.yml` (manual testing)
+- Release workflows: `ci.yml` (reusable quality gates), `tag.yml` (GitHub release), and `release-binaries.yml` (platform builds)
+- Tag releases publish GitHub binaries only; automated package and container publishing is not configured
 - Cross-compilation: native builds for Linux x86, macOS, Windows; `cross` tool for Linux ARM
 
 ### Release Process
@@ -137,21 +137,11 @@ src/
 - Tag version must match all manifests — verified in CI (`tag.yml`) before anything publishes
 - Seven binary platforms: Linux x86_64/aarch64 (glibc + musl), macOS x86_64/aarch64, Windows x86_64
 
-### npm Publishing
+### Package Sources
 
-- Single package (`markdownlint-rs`) bundles all 7 platform binaries in `npm/bin/`
-- `bin/mdlint.js` detects platform at runtime; uses `/proc/self/maps` to distinguish glibc vs musl on Linux
-- Binaries are downloaded from the GitHub release and placed in `npm/bin/` during CI publish
-- When adding a new platform, update `publish-npm.yml` (download + mv step) and `publish-python.yml` matrix
-- npm trusted publishing (OIDC, passwordless): requires npm ≥ 11.5.1 (`npm install -g npm@latest`
-  in CI), `id-token: write` permission, and the npmjs.com trusted publisher config pointing to the
-  **calling** workflow (`tag.yml`), not the reusable workflow (`publish-npm.yml`)
-
-### Python Publishing
-
-- PyPI trusted publishing: use a single job with a bash loop over all 7 platforms rather than a
-  matrix job — avoids concurrent upload errors (HTTP 500) and reduces environment approval prompts
-  to one per release instead of one per matrix element
+- npm and Python package sources remain in `npm/` and `python/`; their publishing workflows have been removed
+- The npm package (`markdownlint-rs`) bundles all 7 platform binaries in `npm/bin/`
+- `npm/bin/mdlint.js` detects platform at runtime; uses `/proc/self/maps` to distinguish glibc vs musl on Linux
 
 ## Developer Guide
 
@@ -175,10 +165,8 @@ src/
 
 ### Adding a new platform
 
-Update all three in sync: `build-binaries.yml` (build the binary), `publish-npm.yml`
-(download + rename step), and `publish-python.yml` (platform loop).
-Also update the
-supported platforms tables in `npm/README.md` and `python/README.md`.
+Update `.github/workflows/release-binaries.yml` to build the new binary.
+Keep package platform detection and the supported-platform documentation in sync.
 
 ### Keeping READMEs in sync
 
