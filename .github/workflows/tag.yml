@@ -5,7 +5,7 @@ on:
     tags:
       - "v*.*.*"
 
-# Prevent concurrent builds: only one at a time (main pushes + releases)
+# Prevent concurrent tag-release builds.
 concurrency:
   group: main-build
   cancel-in-progress: false
@@ -106,3 +106,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit '${{ github.ref_name }}' --repo '${{ github.repository }}' --draft=false
+
+  update-tap:
+    name: Update Homebrew tap
+    if: github.repository == 'nnutter/mdlint'
+    needs: publish-release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/update-tap.yaml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
