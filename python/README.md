@@ -425,14 +425,13 @@ This must pass before submitting a pull request.
 
 ### Release process
 
-Releases use [`cargo-release`](https://github.com/crate-ci/cargo-release), which bumps all package manifests in sync
-and pushes the tag that triggers CI to build binaries and publish a GitHub release:
+The maintainer creates and pushes release tags manually using the `vMAJOR.MINOR.PATCH` naming convention.
+The `Build GitHub Release` workflow starts when a matching tag is pushed.
+It requires an existing tag and does not create tags or change package versions.
 
-```bash
-cargo release patch --execute   # or minor / major
-```
-
-Once the tag is pushed, CI verifies manifest versions, builds binaries for all 7 platforms, and publishes the GitHub release with those binaries attached.
+The workflow creates a draft GitHub Release, builds binaries for all 7 platforms, and uploads them to the draft.
+It publishes the release only after all binary builds and uploads succeed.
+Linting and tests run separately through the CI workflow.
 Package and container registries are not published to automatically.
 After publishing a release, the tag workflow calls `.github/workflows/update-tap.yaml` to update `mdlint` in `nnutter/homebrew-tap`.
 The tap workflow also supports manual runs for an existing published release tag.
