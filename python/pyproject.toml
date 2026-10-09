@@ -14,9 +14,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/swanysimon/mdlint"
-Issues = "https://github.com/swanysimon/mdlint/issues"
-Repository = "https://github.com/swanysimon/mdlint"
+Homepage = "https://github.com/nnutter/mdlint"
+Issues = "https://github.com/nnutter/mdlint/issues"
+Repository = "https://github.com/nnutter/mdlint"
 
 [project.scripts]
 markdownlint-rs = "mdlint.__main__:main"
