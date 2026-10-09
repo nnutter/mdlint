@@ -1,4 +1,4 @@
-name: Tag and Release
+name: Build GitHub Release
 
 on:
   push:
@@ -11,67 +11,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  lint:
-    permissions:
-      contents: read
-    name: Lint and test
-    uses: ./.github/workflows/ci.yml
-
   draft-release:
     name: Create draft release
     runs-on: ubuntu-latest
-    needs: lint
     permissions:
       contents: write
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Get tag version
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" | tee -a "$GITHUB_OUTPUT"
-
-      - name: Verify all package versions match tag
-        env:
-          TAG_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          CARGO_VERSION="$(yq -roy '.package.version' Cargo.toml)"
-          NPM_VERSION="$(jq -r '.version' npm/package.json)"
-          PYTHON_VERSION="$(yq -roy '.project.version' python/pyproject.toml)"
-
-          FAILED=0
-          for PAIR in "Cargo.toml:${CARGO_VERSION}" "npm/package.json:${NPM_VERSION}" "python/pyproject.toml:${PYTHON_VERSION}"; do
-            FILE="${PAIR%%:*}"
-            VERSION="${PAIR##*:}"
-            if [[ "$TAG_VERSION" != "$VERSION" ]]; then
-              echo "Tag version ${TAG_VERSION} does not match ${FILE} version ${VERSION}" >&2
-              FAILED=1
-            fi
-          done
-          exit "$FAILED"
-
-      - name: Check if release already exists
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if gh release view '${{ github.ref_name }}' --repo '${{ github.repository }}'; then
-            echo "Release ${{ github.ref_name }} already exists" >&2
-            exit 1
-          fi
-
       - name: Create Draft Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
+          export VERSION="${TAG#v}"
           # shellcheck disable=SC2016
           envsubst '$VERSION $REPO' < .github/release-template.md > /tmp/release-notes.md
           gh release create '${{ github.ref_name }}' \
             --repo '${{ github.repository }}' \
             --title "Release ${{ github.ref_name }}" \
+            --verify-tag \
             --draft \
             --notes-file /tmp/release-notes.md
 
@@ -99,9 +60,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
       - name: Publish Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
