@@ -125,7 +125,9 @@ src/
   (3) slow checks — build, compatibility, security audit
 - Job dependencies via `needs: [test, clippy, fmt]`
 - Release workflows: `ci.yml` (reusable quality gates), `tag.yml` (GitHub release), and `release-binaries.yml` (platform builds)
-- Tag releases publish GitHub binaries only; automated package and container publishing is not configured
+- Tag releases publish GitHub binaries and then call `update-tap.yaml` to update `nnutter/homebrew-tap` through a pull request
+- Tap updates require an existing `Formula/mdlint.rb`, repository variable `APP_CLIENT_ID`, and secret `APP_PRIVATE_KEY`
+- The tap App token is scoped to `nnutter/homebrew-tap`; package and container registry publishing is not configured
 - Cross-compilation: native builds for Linux x86, macOS, Windows; `cross` tool for Linux ARM
 
 ### Release Process

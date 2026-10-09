@@ -434,6 +434,23 @@ cargo release patch --execute   # or minor / major
 
 Once the tag is pushed, CI verifies manifest versions, builds binaries for all 7 platforms, and publishes the GitHub release with those binaries attached.
 Package and container registries are not published to automatically.
+After publishing a release, the tag workflow calls `.github/workflows/update-tap.yaml` to update `mdlint` in `nnutter/homebrew-tap`.
+The tap workflow also supports manual runs for an existing published release tag.
+
+### Homebrew Tap Setup
+
+Before enabling tap updates:
+
+1. Create `Formula/mdlint.rb` in `nnutter/homebrew-tap`, with a stable source archive URL from `nnutter/mdlint`.
+   The tap's `bin/update-formula` script must be available.
+1. Set the repository variable `APP_CLIENT_ID` and secret `APP_PRIVATE_KEY` in `nnutter/mdlint`.
+1. Install that GitHub App on `nnutter/homebrew-tap` with Contents and Pull requests write permissions.
+1. Enable auto-merge and configure required checks in the tap repository.
+
+The workflow runs only from `nnutter/mdlint` and limits its App token to `nnutter/homebrew-tap`.
+It pushes a formula-update branch, opens a pull request, and enables auto-merge.
+It skips updates when the formula already uses the requested tag.
+A missing formula or a formula pointing to another source repository causes a failure before any branch push.
 
 ## License
 
