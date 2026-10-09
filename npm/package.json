@@ -8,11 +8,11 @@
     "markdown",
     "mdlint"
   ],
-  "homepage": "https://github.com/swanysimon/mdlint",
-  "bugs": "https://github.com/swanysimon/mdlint/issues",
+  "homepage": "https://github.com/nnutter/mdlint",
+  "bugs": "https://github.com/nnutter/mdlint/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/swanysimon/mdlint.git",
+    "url": "git+https://github.com/nnutter/mdlint.git",
     "directory": "npm"
   },
   "license": "Unlicense",
