@@ -1,10 +1,6 @@
 # mdlint
 
-[![CI](https://github.com/swanysimon/mdlint/workflows/CI/badge.svg)](https://github.com/swanysimon/mdlint/actions/workflows/ci.yml?query=branch%3Amain)
-
-[![Crates.io](https://img.shields.io/crates/v/markdownlint-rs.svg)](https://crates.io/crates/markdownlint-rs)
-[![NPM](https://img.shields.io/npm/v/markdownlint-rs.svg)](https://www.npmjs.com/package/markdownlint-rs)
-[![PyPi](https://img.shields.io/pypi/v/markdownlint-rs.svg)](https://pypi.org/project/markdownlint-rs)
+[![CI](https://github.com/nnutter/mdlint/actions/workflows/ci.yml/badge.svg)](https://github.com/nnutter/mdlint/actions/workflows/ci.yml)
 
 An opinionated Markdown formatter and linter, written in Rust.
 
@@ -28,45 +24,31 @@ Run `mdlint format` and stop thinking about it.
 
 ## Quickstart
 
-No install needed — run directly with [uvx](https://docs.astral.sh/uv/guides/tools/):
+Build this fork's `opinionated` branch with [Rust](https://rustup.rs/):
 
 ```shell
-uvx markdownlint-rs check   # lint all Markdown files in the current directory
-uvx markdownlint-rs format  # format all Markdown files in the current directory
+git clone --branch opinionated https://github.com/nnutter/mdlint.git
+cd mdlint
+cargo install --path .
+mdlint format
+mdlint check
 ```
 
 ## Installation
 
-`mdlint` comes packaged in many forms: static binaries, from a Python wrapper, from an NPM wrapper, and in a Docker
-container!
-More ways of installing are in the works, but here's the current list:
+Install from a checkout of this fork with `cargo install --path .`, as shown above.
+When fork releases are available, download platform binaries from the [fork's releases page](https://github.com/nnutter/mdlint/releases).
 
-> :warning: **Be aware:** `mdlint` is the executable name, but most package names are still `markdownlint-rs`!
+**Distribution notice:** Packages named `markdownlint-rs` on crates.io, npm, and PyPI are upstream distributions, not builds of this fork.
+This fork does not publish packages or container images to those registries.
+The executable name remains `mdlint`.
+
+To use Docker, build an image from your fork checkout instead of pulling an upstream image:
 
 ```shell
-# cargo
-cargo install markdownlint-rs
-
-# uv
-uv tool install markdownlint-rs
-
-# or as a project dependency
-uv add --dev markdownlint-rs
-
-# pip
-pip install markdownlint-rs
-
-# npm project dependency
-npm install --save-dev markdownlint-rs
-
-# Docker (linux/amd64 and linux/arm64) - hosted on both DockerHub and GitHub Container Registry
-docker run --rm -v "$PWD:/workspace" ghcr.io/swanysimon/mdlint:latest check
-docker run --rm -v "$PWD:/workspace" simonswanson/mdlint:latest       format
+docker build -t mdlint-local .
+docker run --rm -v "$PWD:/workspace" -w /workspace mdlint-local check
 ```
-
-Pre-built binaries for Linux (x86_64/ARM64, glibc and musl), macOS (Intel/Apple Silicon), and Windows are available
-on the [releases page](https://github.com/swanysimon/mdlint/releases).
-A [Homebrew](https://brew.sh) formula is planned.
 
 ### pre-commit framework
 
@@ -74,13 +56,16 @@ Add to `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
-  - repo: https://github.com/swanysimon/mdlint
-    # use the latest release tag
+  - repo: https://github.com/nnutter/mdlint
+    # choose a fork release tag or commit
     rev: v0.3.24
     hooks:
       - id: mdlint-format
       - id: mdlint-check
 ```
+
+Inherited upstream tags do not include this fork's unreleased changes.
+To use those changes, replace `rev` with a commit from the `opinionated` branch.
 
 Or use additional arguments, e.g. to disable auto-fix:
 
@@ -419,7 +404,7 @@ Optionally, Docker is needed for
 Dockerfile linting. [uv](https://docs.astral.sh/uv/) is required only if working on the Python package.
 
 ```bash
-git clone https://github.com/swanysimon/mdlint.git
+git clone --branch opinionated https://github.com/nnutter/mdlint.git
 cd mdlint
 mise install   # installs prek, tombi, hadolint
 cargo build
@@ -456,6 +441,7 @@ The Unlicense - see [LICENSE](./LICENSE) for details.
 
 ## Acknowledgments
 
+- [mdlint upstream](https://github.com/swanysimon/mdlint) — the original project that this fork builds on
 - [markdownlint](https://github.com/DavidAnson/markdownlint) by David Anson — original rule definitions
 - [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) also by David Anson - most people's first
   frontend to markdownlint
@@ -465,6 +451,6 @@ The Unlicense - see [LICENSE](./LICENSE) for details.
 ## Resources
 
 - [Documentation](./README.md)
-- [Issue Tracker](https://github.com/swanysimon/mdlint/issues)
-- [Releases](https://github.com/swanysimon/mdlint/releases)
+- [Issue Tracker](https://github.com/nnutter/mdlint/issues)
+- [Releases](https://github.com/nnutter/mdlint/releases)
 - [markdownlint Rules Reference](https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md)
