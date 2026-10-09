@@ -139,7 +139,13 @@ impl Rule for MD013 {
             if line_len > limit {
                 violations.push(Violation {
                     line: line_number,
-                    column: Some(limit + 1),
+                    column: Some(
+                        line.char_indices()
+                            .nth(limit)
+                            .expect("line_len > limit checked above")
+                            .0
+                            + 1,
+                    ),
                     rule: self.name().to_owned(),
                     message: format!("Line exceeds maximum length ({line_len} > {limit})"),
                     fix: None,

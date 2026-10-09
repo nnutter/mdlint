@@ -1,6 +1,7 @@
 use crate::lint::rule::Rule;
 use crate::markdown::MarkdownParser;
 use crate::types::Violation;
+use pulldown_cmark::{CodeBlockKind, Event, Tag};
 use serde_json::Value;
 
 pub struct MD048;
@@ -25,78 +26,42 @@ impl Rule for MD048 {
             .unwrap_or("backtick");
 
         let mut violations = Vec::new();
-        let mut first_style: Option<char> = None;
-        let mut in_code_block = false;
-
-        for (line_num, line) in parser.lines().iter().enumerate() {
-            let line_number = line_num + 1;
-            let trimmed = line.trim();
-
-            // Check if line is a code fence (opening or closing)
-            if trimmed.starts_with("```") {
-                // Only check opening fence, not closing
-                if !in_code_block {
-                    let fence_char = '`';
-                    if style == "consistent" {
-                        if let Some(first) = first_style {
-                            if fence_char != first {
-                                violations.push(Violation {
-                                    line: line_number,
-                                    column: Some(1),
-                                    rule: self.name().to_owned(),
-                                    message: format!(
-                                        "Code fence style should be consistent: expected '{first}', found '{fence_char}'"
-                                    ),
-                                    fix: None,
-                                });
-                            }
-                        } else {
-                            first_style = Some(fence_char);
-                        }
-                    } else if style == "tilde" {
-                        violations.push(Violation {
-                            line: line_number,
-                            column: Some(1),
-                            rule: self.name().to_owned(),
-                            message: "Code fence style should be 'tilde' (~), found backtick (`)"
-                                .to_owned(),
-                            fix: None,
-                        });
-                    }
+        let mut first_style = None;
+        for (event, range) in parser.parse_with_offsets() {
+            let Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) = event else {
+                continue;
+            };
+            let fence_char = parser.content()[range.clone()]
+                .chars()
+                .next()
+                .unwrap_or('`');
+            // Backticks in the info string require a tilde fence in CommonMark.
+            if style == "backtick" && info.contains('`') {
+                continue;
+            }
+            let message = match style {
+                "consistent" => {
+                    let first = *first_style.get_or_insert(fence_char);
+                    (fence_char != first).then(|| format!(
+                        "Code fence style should be consistent: expected '{first}', found '{fence_char}'"
+                    ))
                 }
-                in_code_block = !in_code_block;
-            } else if trimmed.starts_with("~~~") {
-                // Only check opening fence, not closing
-                if !in_code_block {
-                    let fence_char = '~';
-                    if style == "consistent" {
-                        if let Some(first) = first_style {
-                            if fence_char != first {
-                                violations.push(Violation {
-                                    line: line_number,
-                                    column: Some(1),
-                                    rule: self.name().to_owned(),
-                                    message: format!(
-                                        "Code fence style should be consistent: expected '{first}', found '{fence_char}'"
-                                    ),
-                                    fix: None,
-                                });
-                            }
-                        } else {
-                            first_style = Some(fence_char);
-                        }
-                    } else if style == "backtick" {
-                        violations.push(Violation {
-                            line: line_number,
-                            column: Some(1),
-                            rule: self.name().to_owned(),
-                            message: "Code fence style should be 'backtick' (`), found tilde (~)"
-                                .to_owned(),
-                            fix: None,
-                        });
-                    }
+                "tilde" if fence_char == '`' => {
+                    Some("Code fence style should be 'tilde' (~), found backtick (`)".to_owned())
                 }
-                in_code_block = !in_code_block;
+                "backtick" if fence_char == '~' => {
+                    Some("Code fence style should be 'backtick' (`), found tilde (~)".to_owned())
+                }
+                _ => None,
+            };
+            if let Some(message) = message {
+                violations.push(Violation {
+                    line: parser.offset_to_line(range.start),
+                    column: Some(1),
+                    rule: self.name().to_owned(),
+                    message,
+                    fix: None,
+                });
             }
         }
 

@@ -3,7 +3,7 @@ name = "markdownlint-rs"
 version = "0.3.24"
 edition = "2024"
 description = "A fast, flexible, configuration-based command-line interface for linting Markdown/CommonMark files"
-repository = "https://github.com/swanysimon/mdlint"
+repository = "https://github.com/nnutter/mdlint"
 license = "Unlicense"
 keywords = ["cli", "formatter", "lint", "markdown"]
 categories = ["command-line-utilities", "development-tools"]
@@ -62,6 +62,7 @@ too_many_lines = { level = "deny", priority = 1 }
 wildcard_enum_match_arm = { level = "allow", priority = 1 }
 
 [lints.rust]
+unsafe_code = "forbid"
 warnings = "deny"
 
 [profile.dev]

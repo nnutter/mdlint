@@ -22,7 +22,10 @@ impl Rule for MD060 {
         let style = config
             .and_then(|c| c.get("style"))
             .and_then(|v| v.as_str())
-            .unwrap_or("consistent");
+            .unwrap_or("any");
+        if style == "any" {
+            return Vec::new();
+        }
 
         let mut violations = Vec::new();
         let lines = parser.lines();
@@ -150,7 +153,7 @@ mod tests {
         let rule = MD060;
         let violations = rule.check(&parser, None);
 
-        // With consistent style, different alignments are okay
+        // Alignment is semantic, not a uniform presentation requirement.
         assert_eq!(violations.len(), 0);
     }
 
@@ -188,6 +191,16 @@ mod tests {
             rendered(&violations),
             ["test.md:2:1: MD060 Table column 2 should use 'default' alignment, found 'left'"]
         );
+    }
+
+    #[test]
+    fn separate_tables_can_choose_different_alignments() {
+        let parser = MarkdownParser::new(
+            "| A | B |\n| :--- | ---: |\n| a | 1 |\n\n| A | B |\n| ---: | :--- |\n| 2 | b |\n",
+        );
+        assert!(MD060.check(&parser, None).is_empty());
+        let config = serde_json::json!({"style": "consistent"});
+        assert_eq!(MD060.check(&parser, Some(&config)).len(), 2);
     }
 
     #[test]

@@ -80,6 +80,80 @@ fn shutdown(client: &Connection) {
     send_notification(client, "exit", serde_json::json!(null));
 }
 
+#[test]
+fn invalid_configuration_is_reported_and_can_be_repaired() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let config = dir.path().join("mdlint.toml");
+    std::fs::write(&config, "default_enabled = [").unwrap();
+    let uri = url::Url::from_file_path(dir.path().join("doc.md"))
+        .unwrap()
+        .to_string();
+    let (server_conn, client) = Connection::memory();
+    let server_thread =
+        thread::spawn(move || run_server_with_connection(&server_conn, None).unwrap());
+    initialize(&client);
+    send_notification(
+        &client,
+        "textDocument/didOpen",
+        serde_json::json!({"textDocument": {
+            "uri": uri, "languageId": "markdown", "version": 1, "text": "é   \n"
+        }}),
+    );
+    let notification = next_notification(&client);
+    assert_eq!(notification.method, "window/showMessage");
+    let error: lsp_types::ShowMessageParams = serde_json::from_value(notification.params).unwrap();
+    assert_eq!(error.typ, lsp_types::MessageType::ERROR);
+    assert!(error.message.contains("Configuration error"));
+    assert!(error.message.contains(&uri));
+    let notification = next_notification(&client);
+    assert_eq!(notification.method, "textDocument/publishDiagnostics");
+    let diagnostics: PublishDiagnosticsParams =
+        serde_json::from_value(notification.params).unwrap();
+    assert!(diagnostics.diagnostics.is_empty());
+
+    let action_params = serde_json::json!({
+        "textDocument": {"uri": uri},
+        "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}},
+        "context": {"diagnostics": []}
+    });
+    send_request(&client, 2, "textDocument/codeAction", action_params.clone());
+    let error = next_response(&client).response_result.unwrap_err();
+    assert_eq!(error.code, -32603);
+    assert!(error.message.contains("Configuration error"));
+
+    std::fs::write(
+        &config,
+        "default_enabled = false\n[rules.MD009]\nenabled = true\n",
+    )
+    .unwrap();
+    send_notification(
+        &client,
+        "textDocument/didChange",
+        serde_json::json!({
+            "textDocument": {"uri": uri, "version": 2},
+            "contentChanges": [{"text": "é   \n"}]
+        }),
+    );
+    let notification = next_notification(&client);
+    assert_eq!(notification.method, "textDocument/publishDiagnostics");
+    let diagnostics: PublishDiagnosticsParams =
+        serde_json::from_value(notification.params).unwrap();
+    assert_eq!(diagnostics.diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics.diagnostics[0].code,
+        Some(NumberOrString::String("MD009".to_owned()))
+    );
+    send_request(&client, 3, "textDocument/codeAction", action_params);
+    let actions: Vec<CodeActionOrCommand> =
+        serde_json::from_value(next_response(&client).response_result.unwrap()).unwrap();
+    assert_eq!(actions.len(), 1);
+    assert!(
+        matches!(&actions[0], CodeActionOrCommand::CodeAction(action) if action.title == "Fix MD009")
+    );
+    shutdown(&client);
+    server_thread.join().unwrap();
+}
+
 // ── test ──────────────────────────────────────────────────────────────────────
 
 #[test]
