@@ -232,12 +232,7 @@ fn nested_lists_preserved() {
 }
 
 #[test]
-fn nested_ordered_list_under_bullet_item_stays_tight() {
-    // Regression test for issue #67: a nested ordered list under a bullet item
-    // is formatted tight (no blank lines separating it from the parent item's
-    // text or the next sibling item), whether or not the source had blank
-    // lines around it. This canonical form must pass `mdlint check` (MD032)
-    // cleanly — see the matching MD032 tests in src/lint/rules/md032.rs.
+fn nested_ordered_list_preserves_loose_parent_spacing() {
     assert_formats_to(
         indoc! {"
             # Example
@@ -254,25 +249,73 @@ fn nested_ordered_list_under_bullet_item_stays_tight() {
 
             - First item:
               1. One
-              2. Two
+              1. Two
+
             - Second item
         "},
     );
 }
 
 #[test]
-fn ordered_list_preserved() {
+fn ordered_lists_use_stable_markers_and_preserve_the_start() {
     assert_formats_to(
-        indoc! {"
-            1. First
-            2. Second
-            3. Third
-        "},
-        indoc! {"
-            1. First
-            2. Second
-            3. Third
-        "},
+        "7. first\n8. second\n9. third\n",
+        "7. first\n1. second\n1. third\n",
+    );
+    let before = "1. first\n1. last\n";
+    let after = "1. first\n1. inserted\n1. last\n";
+    assert_formats_to(before, before);
+    assert_formats_to(after, after);
+}
+
+#[test]
+fn ordered_marker_width_controls_nested_list_indentation() {
+    assert_formats_to(
+        "12. parent\n    - child\n      continuation\n",
+        "12. parent\n    - child\n      continuation\n",
+    );
+}
+
+#[test]
+fn paragraphs_after_nested_lists_stay_in_the_parent_item() {
+    assert_formats_to(
+        "12. parent\n    - child\n\n    after\n",
+        "12. parent\n    - child\n\n    after\n",
+    );
+}
+
+#[test]
+fn loose_list_item_spacing_survives_nested_lists() {
+    assert_formats_to(
+        "12. parent\n    - child\n\n1. next\n",
+        "12. parent\n    - child\n\n1. next\n",
+    );
+}
+
+#[test]
+fn ordered_list_preserved() {
+    let input = "1. First\n1. Second\n1. Third\n";
+    assert_formats_to(input, input);
+}
+
+#[test]
+fn list_item_paragraphs_keep_their_boundaries_and_indentation() {
+    assert_formats_to(
+        "* é\n  + nested\n* second\n\n    a\n",
+        "- é\n  - nested\n\n- second\n\n  a\n",
+    );
+    assert_formats_to("1. first\n\n   second\n", "1. first\n\n   second\n");
+}
+
+#[test]
+fn footnote_paragraphs_keep_their_indentation() {
+    assert_formats_to(
+        "é[^note]\n\n[^note]: body\n\n    😀\n",
+        "é[^note]\n\n[^note]: body\n\n    😀\n",
+    );
+    assert_formats_to(
+        "note[^n]\n\n[^n]: first\n    second\n",
+        "note[^n]\n\n[^n]: first\n    second\n",
     );
 }
 
@@ -289,11 +332,79 @@ fn code_block_content_preserved_verbatim() {
 }
 
 #[test]
+fn code_whitespace_is_not_prose_whitespace() {
+    for input in [
+        "```text\nline  \n\n\n\t\nlast\t\n```\n",
+        "- item\n\n  ```text\n  line  \n  \n  \n  last\t\n  ```\n",
+        "> ```text\n> line  \n> \n> \n> last\t\n> ```\n",
+    ] {
+        assert_formats_to(input, input);
+    }
+}
+
+#[test]
+fn code_fences_cannot_close_on_their_own_content() {
+    for (input, expected) in [
+        ("~~~rust\n```\n~~~\n", "````rust\n```\n````\n"),
+        ("~~~rust\n````\n~~~\n", "`````rust\n````\n`````\n"),
+        ("~~~lang`tag\ncode\n~~~\n", "~~~lang`tag\ncode\n~~~\n"),
+        ("~~~~lang`tag\n~~~\n~~~~\n", "~~~~lang`tag\n~~~\n~~~~\n"),
+        ("> ~~~rust\n> ```\n> ~~~\n", "> ````rust\n> ```\n> ````\n"),
+        (
+            "- item\n\n  ~~~rust\n  ```\n  ~~~\n",
+            "- item\n\n  ````rust\n  ```\n  ````\n",
+        ),
+    ] {
+        assert_formats_to(input, expected);
+    }
+}
+
+#[test]
 fn inline_code_content_preserved() {
     assert_formats_to(
         "Use `_underscores_` and `* asterisks` in code spans.\n",
         "Use `_underscores_` and `* asterisks` in code spans.\n",
     );
+}
+
+#[test]
+fn adjacent_emphasis_keeps_distinct_delimiters() {
+    assert_formats_to("_¡_*0*\n", "*¡*_0_\n");
+    assert_formats_to("_one_*two*\n", "*one*_two_\n");
+}
+
+#[test]
+fn literal_asterisks_do_not_become_emphasis() {
+    for (input, expected) in [
+        ("é \\*literal\\*\n", "é \\*literal\\*\n"),
+        ("é \\*\\*literal\\*\\*\n", "é \\*\\*literal\\*\\*\n"),
+        ("_\\*literal\\*_\n", "*\\*literal\\**\n"),
+    ] {
+        assert_formats_to(input, expected);
+    }
+}
+
+#[test]
+fn reference_links_keep_their_source_labels_and_definition_order() {
+    for input in [
+        "Read [the guide][Guide Name].\n\n[Guide Name]: https://example.com/install \"Guide\"\n",
+        "[guide]: https://example.com\n\nRead [guide][] and [guide].\n",
+        "![image][Picture]\n\n[unused]: /unused\n[Picture]: image.png\n",
+        "First paragraph.\n\n[guide]: /guide\n\nRead [guide].\n",
+        "[guide]: /guide\n  \"Multiline title\"\n",
+        "> [guide]: /guide\n>\n> Read [guide].\n",
+        "- Read [guide].\n\n  [guide]: /guide\n",
+        "[guide]: /first\n[guide]: /second\n\nRead [guide].\n",
+        "[foo _bar_]: /guide\n\nRead [foo _bar_][] and [foo _bar_].\n",
+        "[a\\[b]: /guide\n\nRead [text][a\\[b].\n",
+        "- [guide]: /guide\n\nRead [guide].\n",
+    ] {
+        assert_formats_to(input, input);
+    }
+    let before = "Read [guide].\n\n[guide]: /old\n";
+    let after = "Read [guide].\n\n[guide]: /new\n";
+    assert_formats_to(before, before);
+    assert_formats_to(after, after);
 }
 
 #[test]
@@ -317,6 +428,29 @@ fn blockquote_preserved() {
             >
             > second para
         "},
+    );
+}
+
+#[test]
+fn definition_like_paragraph_text_does_not_create_references() {
+    for input in [
+        "Text\n[guide]: /example\n\nRead [guide].\n",
+        "Text\n  [guide]: /example\n\nRead [guide].\n",
+    ] {
+        let expected = "Text\n\\[guide]: /example\n\nRead [guide].\n";
+        assert_formats_to(input, expected);
+    }
+}
+
+#[test]
+fn changing_a_table_cell_does_not_resize_other_rows() {
+    let before = "| Name | Count |\n| :--- | ---: |\n| short | 1 |\n| other | 2 |\n";
+    let after = "| Name | Count |\n| :--- | ---: |\n| a much longer name | 1 |\n| other | 2 |\n";
+    assert_formats_to(before, before);
+    assert_formats_to(after, after);
+    assert_formats_to(
+        "| Name  | Count |\n| :----- | -----: |\n| short | 1     |\n| other | 2     |\n",
+        before,
     );
 }
 
@@ -511,6 +645,100 @@ fn format_rewrites_file_in_place() {
     );
 }
 
+#[test]
+fn cli_exclusions_apply_to_walked_and_explicit_files() {
+    for command in ["format", "check"] {
+        for source in ["cli", "config"] {
+            for pattern in [
+                "**/generated/**",
+                "docs/generated/**",
+                "**/skip.md",
+                "docs/generated",
+                "docs/generated/skip.md",
+                "absolute-directory",
+                "absolute-file",
+            ] {
+                let dir = TempDir::new().unwrap();
+                let generated = dir.path().join("docs/generated");
+                fs::create_dir_all(&generated).unwrap();
+                let skipped = generated.join("skip.md");
+                let kept = dir.path().join("docs/keep.md");
+                fs::write(&skipped, "* item\n").unwrap();
+                fs::write(&kept, "* item\n").unwrap();
+                let exclude = match pattern {
+                    "absolute-directory" => generated.to_str().unwrap(),
+                    "absolute-file" => skipped.to_str().unwrap(),
+                    _ => pattern,
+                };
+
+                let mut invocation = Command::new(mdlint_bin());
+                invocation
+                    .args([command, "docs", "docs/generated/skip.md"])
+                    .current_dir(dir.path())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+                if command == "check" {
+                    invocation.args(["--select", "MD004", "--fix"]);
+                }
+                if source == "cli" {
+                    invocation.args(["--no-config", "--exclude", exclude]);
+                } else {
+                    let config = dir.path().join("mdlint.toml");
+                    let value = toml::Value::String(exclude.to_owned());
+                    fs::write(&config, format!("exclude = [{value}]\n")).unwrap();
+                    invocation.args(["--config", config.to_str().unwrap()]);
+                }
+                let status = invocation.status().unwrap();
+                assert_eq!(status.code(), Some(i32::from(command == "check")));
+                assert_eq!(
+                    fs::read_to_string(&skipped).unwrap(),
+                    "* item\n",
+                    "{command}: {source}: {pattern}"
+                );
+                assert_eq!(
+                    fs::read_to_string(&kept).unwrap(),
+                    "- item\n",
+                    "{command}: {source}: {pattern}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn invalid_exclusion_globs_are_reported() {
+    let dir = TempDir::new().unwrap();
+    let output = Command::new(mdlint_bin())
+        .args(["--no-config", "format", "--exclude", "[unclosed"])
+        .current_dir(dir.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("Invalid glob pattern"), "{stderr}");
+}
+
+#[test]
+fn runtime_errors_are_reported_on_stderr() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("invalid.toml");
+    fs::write(&config, "default_enabled = [").unwrap();
+
+    let output = Command::new(mdlint_bin())
+        .args(["--config", config.to_str().unwrap(), "format"])
+        .current_dir(dir.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("Configuration error"), "{stderr}");
+}
+
 // ── `mdlint check` CLI ───────────────────────────────────────────────────────
 
 #[test]
@@ -548,6 +776,27 @@ fn check_without_fix_does_not_modify_file() {
         after, content,
         "check with fix=false must not modify the file"
     );
+}
+
+#[test]
+fn check_reports_fix_failures_as_runtime_errors() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("doc.md");
+    let original = "Text\n# Heading\nText\n";
+    fs::write(&file, original).unwrap();
+    let output = Command::new(mdlint_bin())
+        .args(["--no-config", "check", "--select", "MD022", "--fix"])
+        .arg(&file)
+        .current_dir(dir.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("overlapping fix ranges"), "{stderr}");
+    assert_eq!(fs::read_to_string(file).unwrap(), original);
 }
 
 #[test]

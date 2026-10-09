@@ -5,7 +5,7 @@ on:
     tags:
       - "v*.*.*"
 
-# Prevent concurrent builds: only one at a time (main pushes + releases)
+# Prevent concurrent tag-release builds.
 concurrency:
   group: main-build
   cancel-in-progress: false
@@ -76,7 +76,7 @@ jobs:
             --notes-file /tmp/release-notes.md
 
   ####
-  # Publish binaries to GitHub; necessary for Python and Node builds
+  # Attach platform binaries to the draft GitHub release
   ####
 
   release-binaries:
@@ -89,51 +89,12 @@ jobs:
       release: ${{ github.ref_name }}
 
   ####
-  # Publish to consumer repositories
-  ####
-
-  publish-docker:
-    needs: release-binaries
-    permissions:
-      contents: read
-      packages: write
-    uses: ./.github/workflows/publish-container.yml
-    with:
-      version: ${{ github.ref_name }}
-    secrets: inherit
-
-  publish-node:
-    needs: release-binaries
-    permissions:
-      contents: read
-      id-token: write # OIDC trusted publishing
-    uses: ./.github/workflows/publish-npm.yml
-
-  publish-python:
-    needs: release-binaries
-    permissions:
-      contents: read
-      id-token: write # OIDC trusted publishing
-    uses: ./.github/workflows/publish-python.yml
-
-  publish-rust:
-    needs: release-binaries
-    permissions:
-      contents: read
-      id-token: write # OIDC trusted publishing
-    uses: ./.github/workflows/publish-rust.yml
-
-  ####
   # Finalize the draft release
   ####
 
   publish-release:
     name: Publish Release
-    needs:
-      - publish-docker
-      - publish-node
-      - publish-python
-      - publish-rust
+    needs: release-binaries
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -145,3 +106,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit '${{ github.ref_name }}' --repo '${{ github.repository }}' --draft=false
+
+  update-tap:
+    name: Update Homebrew tap
+    if: github.repository == 'nnutter/mdlint'
+    needs: publish-release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/update-tap.yaml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

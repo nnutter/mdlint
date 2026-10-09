@@ -5,7 +5,8 @@
 ## Project Philosophy
 
 mdlint is an **opinionated Markdown formatter** first, linter second — analogous to ruff or gofmt.
-The formatter (`mdlint format`) enforces a canonical style by rewriting files. The linter
+The formatter (`mdlint format`) enforces a canonical style by rewriting files.
+The linter
 (`mdlint check`) reports violations that fall outside what the formatter can fix automatically.
 
 Core principles: correctness over performance, type safety, minimal code, no duplication,
@@ -123,8 +124,10 @@ src/
 - Pipeline stages: (1) fast checks in parallel — test, clippy, fmt; (2) dogfooding;
   (3) slow checks — build, compatibility, security audit
 - Job dependencies via `needs: [test, clippy, fmt]`
-- Three workflow files: `ci.yml` (reusable quality gates), `tag.yml` (production release),
-  `release.yml` (manual testing)
+- Release workflows: `ci.yml` (reusable quality gates), `tag.yml` (GitHub release), and `release-binaries.yml` (platform builds)
+- Tag releases publish GitHub binaries and then call `update-tap.yaml` to update `nnutter/homebrew-tap` through a pull request
+- Tap updates require an existing `Formula/mdlint.rb`, repository variable `APP_CLIENT_ID`, and secret `APP_PRIVATE_KEY`
+- The tap App token is scoped to `nnutter/homebrew-tap`; package and container registry publishing is not configured
 - Cross-compilation: native builds for Linux x86, macOS, Windows; `cross` tool for Linux ARM
 
 ### Release Process
@@ -136,52 +139,44 @@ src/
 - Tag version must match all manifests — verified in CI (`tag.yml`) before anything publishes
 - Seven binary platforms: Linux x86_64/aarch64 (glibc + musl), macOS x86_64/aarch64, Windows x86_64
 
-### npm Publishing
+### Package Sources
 
-- Single package (`markdownlint-rs`) bundles all 7 platform binaries in `npm/bin/`
-- `bin/mdlint.js` detects platform at runtime; uses `/proc/self/maps` to distinguish glibc vs musl on Linux
-- Binaries are downloaded from the GitHub release and placed in `npm/bin/` during CI publish
-- When adding a new platform, update `publish-npm.yml` (download + mv step) and `publish-python.yml` matrix
-- npm trusted publishing (OIDC, passwordless): requires npm ≥ 11.5.1 (`npm install -g npm@latest`
-  in CI), `id-token: write` permission, and the npmjs.com trusted publisher config pointing to the
-  **calling** workflow (`tag.yml`), not the reusable workflow (`publish-npm.yml`)
-
-### Python Publishing
-
-- PyPI trusted publishing: use a single job with a bash loop over all 7 platforms rather than a
-  matrix job — avoids concurrent upload errors (HTTP 500) and reduces environment approval prompts
-  to one per release instead of one per matrix element
+- npm and Python package sources remain in `npm/` and `python/`; their publishing workflows have been removed
+- The npm package (`markdownlint-rs`) bundles all 7 platform binaries in `npm/bin/`
+- `npm/bin/mdlint.js` detects platform at runtime; uses `/proc/self/maps` to distinguish glibc vs musl on Linux
 
 ## Developer Guide
 
 ### Adding a linting rule
 
 1. Create `src/lint/rules/mdXXX.rs` and implement the `Rule` trait
-  (`name`, `description`, `tags`, `check`). Return `true` from `fixable()`
-  if `mdlint format` enforces this rule.
-2. Register it in `create_default_registry()` in `src/lint/rules/mod.rs`
-3. Write tests in the same file — both a violation-detection test and a fix-application test
-  (see Testing Strategy: every transformation test must cover both modes)
+   (`name`, `description`, `tags`, `check`).
+   Return `true` from `fixable()`
+   if `mdlint format` enforces this rule.
+1. Register it in `create_default_registry()` in `src/lint/rules/mod.rs`
+1. Write tests in the same file — both a violation-detection test and a fix-application test
+   (see Testing Strategy: every transformation test must cover both modes)
 
 ### Adding a formatting behavior
 
 1. Document the style decision in `FORMAT_SPEC.md` first — it is the source of truth
-2. Implement in `src/formatter/mod.rs` by handling the relevant pulldown-cmark events
-3. Constraint: `format(format(x)) == format(x)` — idempotency is non-negotiable
-4. If the behavior maps to a lint rule, set `fixable() = true` and ensure `mdlint format`
-  and `mdlint check --fix` produce identical output for that rule
+1. Implement in `src/formatter/mod.rs` by handling the relevant pulldown-cmark events
+1. Constraint: `format(format(x)) == format(x)` — idempotency is non-negotiable
+1. If the behavior maps to a lint rule, set `fixable() = true` and ensure `mdlint format`
+   and `mdlint check --fix` produce identical output for that rule
 
 ### Adding a new platform
 
-Update all three in sync: `build-binaries.yml` (build the binary), `publish-npm.yml`
-(download + rename step), and `publish-python.yml` (platform loop). Also update the
-supported platforms tables in `npm/README.md` and `python/README.md`.
+Update `.github/workflows/release-binaries.yml` to build the new binary.
+Keep package platform detection and the supported-platform documentation in sync.
 
 ### Keeping READMEs in sync
 
-`npm/README.md` and `python/README.md` mirror `README.md`. When editing any of them:
+`npm/README.md` and `python/README.md` mirror `README.md`.
+When editing any of them:
 
-- Copy changes to all three. The only intentional differences are the Installation section
+- Copy changes to all three.
+  The only intentional differences are the Installation section
   (package-manager specific), the "How it works" section (platform/binary table), and the
   Contributing section (package-specific build/release steps with a link to the main repo).
 - Relative links (e.g. `mdlint.default.toml`) become absolute GitHub URLs in the sub-package READMEs.

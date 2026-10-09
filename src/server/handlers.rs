@@ -1,5 +1,6 @@
 use crate::config::loader::find_all_configs;
 use crate::config::{Config, merge_many_configs};
+use crate::error::Result;
 use crate::formatter;
 use crate::lint::LintEngine;
 use crate::server::convert;
@@ -8,8 +9,8 @@ use crate::types::Violation;
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, DidChangeTextDocumentParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
-    PublishDiagnosticsParams, Range, TextEdit, Uri, WorkspaceEdit,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams, MessageType,
+    PublishDiagnosticsParams, Range, ShowMessageParams, TextEdit, Uri, WorkspaceEdit,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -40,8 +41,7 @@ fn did_open(conn: &Connection, notif: &Notification, docs: &mut DocumentStore) {
     let uri = params.text_document.uri;
     let content = params.text_document.text;
     docs.open(uri.clone(), content.clone());
-    let config = load_config(&uri);
-    publish_diagnostics(conn, &uri, &content, config);
+    publish_diagnostics(conn, &uri, &content);
 }
 
 fn did_change(conn: &Connection, notif: &Notification, docs: &mut DocumentStore) {
@@ -57,8 +57,7 @@ fn did_change(conn: &Connection, notif: &Notification, docs: &mut DocumentStore)
     };
     let content = change.text;
     docs.update(&uri, content.clone());
-    let config = load_config(&uri);
-    publish_diagnostics(conn, &uri, &content, config);
+    publish_diagnostics(conn, &uri, &content);
 }
 
 fn did_close(conn: &Connection, notif: &Notification, docs: &mut DocumentStore) {
@@ -114,10 +113,19 @@ fn code_action(conn: &Connection, req: &Request, docs: &DocumentStore) {
         return;
     };
     let content = content.to_owned();
-    let config = load_config(uri);
-    let violations = LintEngine::new(config)
-        .lint_content(&content)
-        .unwrap_or_default();
+    let violations =
+        match load_config(uri).and_then(|config| LintEngine::new(config).lint_content(&content)) {
+            Ok(violations) => violations,
+            Err(error) => {
+                send_error(
+                    conn,
+                    req.id.clone(),
+                    -32603,
+                    &format!("{}: {error}", uri.as_str()),
+                );
+                return;
+            }
+        };
     let actions = violations_to_actions(uri, &content, &violations, &params.range);
     let resp = Response::new_ok(req.id.clone(), actions);
     let _ = conn.sender.send(Message::Response(resp));
@@ -140,12 +148,18 @@ fn violations_to_actions(
                 v_line >= range.start.line && v_line <= range.end.line
             }
         })
-        .map(|v| {
+        .filter_map(|v| {
             let fix = v.fix.as_ref().expect("fix is_some checked above");
-            let edit = convert::fix_to_text_edit(fix, content);
+            let edit = match convert::fix_to_text_edit(fix, content) {
+                Ok(edit) => edit,
+                Err(error) => {
+                    eprintln!("[mdlint-server] Cannot create fix for {}: {error}", v.rule);
+                    return None;
+                }
+            };
             let mut changes = HashMap::new();
             changes.insert(uri.clone(), vec![edit]);
-            CodeActionOrCommand::CodeAction(CodeAction {
+            Some(CodeActionOrCommand::CodeAction(CodeAction {
                 title: format!("Fix {}", v.rule),
                 kind: Some(CodeActionKind::QUICKFIX),
                 edit: Some(WorkspaceEdit {
@@ -153,15 +167,28 @@ fn violations_to_actions(
                     ..Default::default()
                 }),
                 ..Default::default()
-            })
+            }))
         })
         .collect()
 }
 
-pub fn publish_diagnostics(conn: &Connection, uri: &Uri, content: &str, config: Config) {
-    let violations = LintEngine::new(config)
-        .lint_content(content)
-        .unwrap_or_default();
+fn publish_diagnostics(conn: &Connection, uri: &Uri, content: &str) {
+    let violations =
+        match load_config(uri).and_then(|config| LintEngine::new(config).lint_content(content)) {
+            Ok(violations) => violations,
+            Err(error) => {
+                let params = ShowMessageParams {
+                    typ: MessageType::ERROR,
+                    message: format!("{}: {error}", uri.as_str()),
+                };
+                let _ = conn.sender.send(Message::Notification(Notification::new(
+                    "window/showMessage".to_owned(),
+                    params,
+                )));
+                // Clear stale diagnostics without linting under unintended defaults.
+                Vec::new()
+            }
+        };
     let diagnostics = violations
         .iter()
         .map(|v| convert::violation_to_diagnostic(v, content))
@@ -177,12 +204,14 @@ pub fn publish_diagnostics(conn: &Connection, uri: &Uri, content: &str, config: 
     )));
 }
 
-fn load_config(uri: &Uri) -> Config {
+fn load_config(uri: &Uri) -> Result<Config> {
     let dir = convert::uri_to_path(uri)
         .and_then(|p| p.parent().map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("."));
-    let configs = find_all_configs(&dir).unwrap_or_default();
-    merge_many_configs(configs.into_iter().map(|(_, c)| c).collect())
+    let configs = find_all_configs(&dir)?;
+    Ok(merge_many_configs(
+        configs.into_iter().map(|(_, c)| c).collect(),
+    ))
 }
 
 fn send_error(conn: &Connection, id: lsp_server::RequestId, code: i32, message: &str) {

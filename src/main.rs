@@ -6,7 +6,7 @@ use mdlint::error::Result;
 use mdlint::fix::Fixer;
 use mdlint::format::{DefaultFormatter, Formatter as _, GitlabFormatter, JsonFormatter};
 use mdlint::formatter;
-use mdlint::glob::FileWalker;
+use mdlint::glob::find_files;
 use mdlint::lint::{LintEngine, LintResult};
 use mdlint::migrate::run_migrate;
 use mdlint::types::Violation;
@@ -17,7 +17,14 @@ use std::path::PathBuf;
 use std::process;
 
 fn main() {
-    process::exit(run().map_or(2i32, i32::from));
+    let exit_code = match run() {
+        Ok(has_violations) => i32::from(has_violations),
+        Err(error) => {
+            eprintln!("{error}");
+            2
+        }
+    };
+    process::exit(exit_code);
 }
 
 fn run() -> Result<bool> {
@@ -117,47 +124,6 @@ fn merge_excludes(cli_excludes: &[PathBuf], config_excludes: &[String]) -> Vec<P
     excludes
 }
 
-fn find_files(
-    paths: &[PathBuf],
-    excludes: &[PathBuf],
-    respect_ignore: bool,
-) -> Result<Vec<PathBuf>> {
-    let mut all_files = Vec::new();
-    let mut add_to_file = |path: PathBuf| {
-        if !all_files.contains(&path) && !is_excluded(&path, excludes) {
-            all_files.push(path);
-        }
-    };
-
-    for path in paths {
-        if path.is_dir() {
-            let walker = FileWalker::new(respect_ignore);
-            walker
-                .find_markdown_files(path)?
-                .into_iter()
-                .for_each(&mut add_to_file);
-        } else if path.is_file() {
-            add_to_file(path.clone());
-        } else {
-            eprintln!("Warning: Path not found: {}", path.display());
-        }
-    }
-
-    Ok(all_files)
-}
-
-fn is_excluded(path: &PathBuf, excludes: &[PathBuf]) -> bool {
-    excludes.iter().any(|exclude| {
-        // Canonicalize the exclude path so relative paths (e.g. "FORMAT_SPEC.md")
-        // match against the absolute paths returned by the file walker.
-        if let Ok(canonical) = exclude.canonicalize() {
-            path == &canonical || path.starts_with(&canonical)
-        } else {
-            path == exclude || path.starts_with(exclude)
-        }
-    })
-}
-
 type FileOutcome = Result<(PathBuf, Vec<Violation>, Vec<String>)>;
 
 fn lint_files_parallel(config: Config, files: &[PathBuf], verbose: bool) -> Result<LintResult> {
@@ -224,34 +190,13 @@ fn should_use_color(color: &TerminalColor) -> bool {
     }
 }
 
-#[expect(clippy::similar_names)] // `fixer` and `fixes` are clearly distinct: one is the engine, one is the data
 fn apply_fixes(lint_result: &LintResult) -> Result<()> {
     let fixer = Fixer::new();
 
     for file_result in &lint_result.file_results {
-        let fixes: Vec<_> = file_result
-            .violations
-            .iter()
-            .filter_map(|v| v.fix.clone())
-            .collect();
-
-        if fixes.is_empty() {
-            continue;
-        }
-
-        let content = fs::read_to_string(&file_result.path)?;
-        match fixer.apply_fixes_to_content(&content, &fixes) {
-            Ok(fixed_content) => {
-                fs::write(&file_result.path, fixed_content)?;
-                eprintln!("Fixed: {}", file_result.path.display());
-            }
-            Err(e) => {
-                eprintln!(
-                    "Failed to apply fixes to {}: {}",
-                    file_result.path.display(),
-                    e
-                );
-            }
+        if file_result.violations.iter().any(|v| v.fix.is_some()) {
+            fixer.apply_file_fixes(file_result)?;
+            eprintln!("Fixed: {}", file_result.path.display());
         }
     }
 

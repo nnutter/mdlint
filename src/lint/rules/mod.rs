@@ -1,3 +1,4 @@
+mod emphasis;
 mod md001;
 mod md003;
 mod md004;

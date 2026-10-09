@@ -13,10 +13,7 @@ fn fixture(path: &str) -> String {
 }
 
 fn all_rules_engine() -> LintEngine {
-    LintEngine::new(Config {
-        default_enabled: true,
-        ..Config::default()
-    })
+    LintEngine::new(Config::default().apply_rule_filters(&["ALL".to_owned()], &[]))
 }
 
 // ── Format workflow tests ─────────────────────────────────────────────────────
@@ -96,6 +93,201 @@ fn check_fix_removes_trailing_spaces() {
 }
 
 #[test]
+fn default_checks_do_not_enforce_optional_document_policies() {
+    let content = format!(
+        "## Why!\n\n<div>HTML</div>\n\n{}\n",
+        "Long prose ".repeat(30)
+    );
+    for config in [
+        Config::default(),
+        toml::from_str::<Config>("fix = false").unwrap(),
+    ] {
+        let violations = LintEngine::new(config).lint_content(&content).unwrap();
+        assert!(violations.iter().all(|v| !matches!(
+            v.rule.as_str(),
+            "MD013" | "MD026" | "MD033" | "MD041" | "MD043"
+        )));
+    }
+    let selected = Config::default().apply_rule_filters(&["ALL".to_owned()], &[]);
+    assert!(
+        LintEngine::new(selected)
+            .lint_content(&content)
+            .unwrap()
+            .iter()
+            .any(|v| v.rule == "MD013")
+    );
+}
+
+#[test]
+fn default_list_indentation_check_accepts_wide_ordered_parents() {
+    let content =
+        mdlint::formatter::format("# Title\n\n12. First. Next.\n    - Child. Again.\n\n1. Last.\n");
+    let violations = LintEngine::new(Config::default())
+        .lint_content(&content)
+        .unwrap();
+    assert!(violations.is_empty(), "{content}\n{violations:?}");
+}
+
+#[test]
+fn emphasis_fixes_do_not_change_reference_identities() {
+    for (style, source, target) in [("asterisk", "_", "*"), ("underscore", "*", "_")] {
+        let strong = source.repeat(2);
+        let input = format!(
+            "[foo {source}bar{source}]: /guide\n[foo {strong}bar{strong}]: /strong\n\nRead [foo {source}bar{source}] and [foo {strong}bar{strong}][] and {source}prose{source}.\n"
+        );
+        let expected = input.replace(
+            &format!("{source}prose{source}"),
+            &format!("{target}prose{target}"),
+        );
+        let config: Config = toml::from_str(&format!("default_enabled = false\n[rules.MD049]\nstyle = \"{style}\"\n[rules.MD050]\nstyle = \"{style}\"\n")).unwrap();
+        let engine = LintEngine::new(config);
+        let fixes: Vec<_> = engine
+            .lint_content(&input)
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.fix.clone())
+            .collect();
+        let corrected = Fixer::new().apply_fixes_to_content(&input, &fixes).unwrap();
+        assert_eq!(corrected, expected);
+        assert!(engine.lint_content(&corrected).unwrap().is_empty());
+        if style == "asterisk" {
+            assert_eq!(mdlint::formatter::format(&input), expected);
+        }
+    }
+}
+
+#[test]
+fn optional_policies_still_accept_explicit_configuration() {
+    for (rule, content, settings) in [
+        (
+            "MD013",
+            "A sentence longer than the configured limit.\n",
+            "line_length = 10",
+        ),
+        ("MD026", "# Why!\n", "enabled = true"),
+        ("MD033", "<div>HTML</div>\n", "enabled = true"),
+        ("MD041", "A document fragment.\n", "enabled = true"),
+        ("MD043", "# Actual\n", "headings = [\"Required\"]"),
+    ] {
+        let config: Config = toml::from_str(&format!(
+            "default_enabled = false\n[rules.{rule}]\n{settings}\n"
+        ))
+        .unwrap();
+        assert!(
+            LintEngine::new(config)
+                .lint_content(content)
+                .unwrap()
+                .iter()
+                .any(|v| v.rule == rule),
+            "{rule}"
+        );
+    }
+}
+
+#[test]
+fn default_checks_allow_code_tabs_and_headings_in_separate_sections() {
+    let config =
+        Config::default().apply_rule_filters(&["MD010".to_owned(), "MD024".to_owned()], &[]);
+    let engine = LintEngine::new(config);
+    let content =
+        "## One\n\n### Examples\n\n## Two\n\n### Examples\n\n```text\nfirst\nsecond\tline\n```\n";
+    assert!(engine.lint_content(content).unwrap().is_empty());
+    assert!(
+        engine
+            .lint_content("Text\twith a tab\n")
+            .unwrap()
+            .iter()
+            .any(|v| v.rule == "MD010")
+    );
+}
+
+#[test]
+fn ordered_list_fixes_preserve_starts_and_match_formatting() {
+    let config = Config::default().apply_rule_filters(&["MD029".to_owned()], &[]);
+    let engine = LintEngine::new(config);
+    for (input, expected) in [
+        ("7. first\n8. second\n", "7. first\n1. second\n"),
+        ("> 7. first\n> 8. second\n", "> 7. first\n> 1. second\n"),
+        (
+            "- parent\n\n  7. first\n  8. second\n",
+            "- parent\n\n  7. first\n  1. second\n",
+        ),
+    ] {
+        let violations = engine.lint_content(input).unwrap();
+        let fixes: Vec<_> = violations.iter().filter_map(|v| v.fix.clone()).collect();
+        assert_eq!(
+            Fixer::new().apply_fixes_to_content(input, &fixes).unwrap(),
+            expected
+        );
+        assert_eq!(formatter::format(input), expected);
+        assert!(engine.lint_content(expected).unwrap().is_empty());
+    }
+}
+
+#[test]
+fn safe_formatter_delimiters_pass_style_checks() {
+    let config = Config::default().apply_rule_filters(
+        &["MD048".to_owned(), "MD049".to_owned(), "MD050".to_owned()],
+        &[],
+    );
+    let engine = LintEngine::new(config);
+    for input in ["~~~lang`tag\ncode\n~~~\n", "_one_*two*\n", "_one_**two**\n"] {
+        let formatted = formatter::format(input);
+        assert!(
+            engine.lint_content(&formatted).unwrap().is_empty(),
+            "{formatted}"
+        );
+        assert_eq!(formatter::format(&formatted), formatted);
+        let violations = engine.lint_content(input).unwrap();
+        let fixes: Vec<_> = violations.iter().filter_map(|v| v.fix.clone()).collect();
+        if !input.starts_with("~~~") {
+            assert_eq!(
+                Fixer::new().apply_fixes_to_content(input, &fixes).unwrap(),
+                formatted
+            );
+        }
+    }
+}
+
+#[test]
+fn unicode_line_length_diagnostic_uses_a_byte_column() {
+    let config = Config {
+        default_enabled: false,
+        rules: std::collections::HashMap::from([(
+            "MD013".to_owned(),
+            RuleConfig::Config(std::collections::HashMap::from([(
+                "line_length".to_owned(),
+                toml::Value::Integer(2),
+            )])),
+        )]),
+        ..Config::default()
+    };
+    let violations = LintEngine::new(config).lint_content("é😀x\n").unwrap();
+    assert_eq!(violations.len(), 1);
+    assert_eq!(violations[0].column, Some(7));
+}
+
+#[test]
+fn unicode_inline_fixes_use_byte_columns() {
+    for (rule, input, expected, columns) in [
+        ("MD009", "é😀   \n", "é😀\n", vec![7]),
+        ("MD049", "é _😀_\n", "é *😀*\n", vec![4, 9]),
+        ("MD050", "é __😀__\n", "é **😀**\n", vec![4, 10]),
+    ] {
+        let config = Config::default().apply_rule_filters(&[rule.to_owned()], &[]);
+        let engine = LintEngine::new(config);
+        let violations = engine.lint_content(input).unwrap();
+        let mut actual_columns: Vec<_> = violations.iter().map(|v| v.column.unwrap()).collect();
+        actual_columns.sort_unstable();
+        assert_eq!(actual_columns, columns, "{rule}");
+        let fixes: Vec<_> = violations.into_iter().map(|v| v.fix.unwrap()).collect();
+        let result = Fixer::new().apply_fixes_to_content(input, &fixes).unwrap();
+        assert_eq!(result, expected, "{rule}");
+        assert!(engine.lint_content(expected).unwrap().is_empty(), "{rule}");
+    }
+}
+
+#[test]
 fn check_detects_hard_tabs() {
     let content = fixture("check/violations.md");
     let engine = all_rules_engine();
@@ -111,7 +303,7 @@ fn check_fix_replaces_hard_tabs() {
     let content = indoc! {"
         # Heading
 
-        \tTabbed line
+        Text\tTabbed line
     "};
     let engine = all_rules_engine();
     let violations = engine.lint_content(content).unwrap();
@@ -179,14 +371,13 @@ fn check_clean_file_has_no_violations() {
 
 #[test]
 fn select_restricts_check_to_named_rule() {
-    // Line has both a heading-level skip (MD001) and a hard tab (MD010); --select MD001
-    // should report only MD001.
+    // Line has both a heading-level skip (MD001) and a prose tab (MD010).
     let content = indoc! {"
         # Heading
 
         ### Skipped level
 
-        \tTabbed line
+        Text\tTabbed line
     "};
     let config = Config::default().apply_rule_filters(&["MD001".to_owned()], &[]);
     let violations = LintEngine::new(config).lint_content(content).unwrap();
@@ -201,7 +392,7 @@ fn ignore_excludes_named_rule_only() {
 
         ### Skipped level
 
-        \tTabbed line
+        Text\tTabbed line
     "};
     let config = Config::default().apply_rule_filters(&[], &["MD010".to_owned()]);
     let violations = LintEngine::new(config).lint_content(content).unwrap();
@@ -211,7 +402,7 @@ fn ignore_excludes_named_rule_only() {
 
 #[test]
 fn ignore_overrides_config_file_enabling_the_rule() {
-    let content = "\tTabbed line\n";
+    let content = "Text\tTabbed line\n";
     let mut config = Config::default();
     config
         .rules

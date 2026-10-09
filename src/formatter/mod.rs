@@ -1,6 +1,9 @@
-use std::fmt::Write as _;
+mod sentences;
 
-use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use std::fmt::Write as _;
+use std::ops::Range;
+
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 
 /// Format a Markdown document to canonical style.
 ///
@@ -9,7 +12,8 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagE
 /// - Has exactly one blank line between top-level block elements
 /// - Uses ATX-style headings
 /// - Uses `-` for unordered list markers
-/// - Uses backtick fences for code blocks
+/// - Uses safe backtick or tilde fences for code blocks
+/// - Adds conservative sentence breaks without width-based reflow
 #[must_use]
 pub fn format(input: &str) -> String {
     if input.trim().is_empty() {
@@ -17,11 +21,17 @@ pub fn format(input: &str) -> String {
     }
 
     let mut state = FormatterState::new();
-    let events: Vec<Event<'_>> = Parser::new_ext(input, mk_options()).collect();
+    let parser = Parser::new_ext(input, mk_options());
+    let mut definitions = reference_definition_ranges(input, &parser)
+        .into_iter()
+        .peekable();
+    let events: Vec<_> = parser.into_offset_iter().collect();
+    let mut code_fences = code_block_fences(&events).into_iter();
+    let mut loose_lists = list_looseness(&events).into_iter();
 
     // Precompute per-event lookahead: is the *next* event Start(List(None))?
     let lookahead: Vec<bool> = (0..events.len())
-        .map(|i| matches!(events.get(i + 1), Some(Event::Start(Tag::List(None)))))
+        .map(|i| matches!(events.get(i + 1), Some((Event::Start(Tag::List(None)), _))))
         .collect();
 
     // Precompute the first character of the immediately following Text event, if
@@ -33,18 +43,205 @@ pub fn format(input: &str) -> String {
     // boundary, represented as None.
     let next_text_char: Vec<Option<char>> = (0..events.len())
         .map(|i| match events.get(i + 1) {
-            Some(Event::Text(t)) => t.chars().next(),
+            Some((Event::Text(t), _)) => t.chars().next(),
             _ => None,
         })
         .collect();
 
-    for ((event, next_is_ul), next_char) in events.into_iter().zip(lookahead).zip(next_text_char) {
+    let mut verbatim_link_depth = 0;
+    for (((event, range), next_is_ul), next_char) in
+        events.into_iter().zip(lookahead).zip(next_text_char)
+    {
+        if verbatim_link_depth > 0 {
+            match event {
+                Event::Start(_) => verbatim_link_depth += 1,
+                Event::End(_) => verbatim_link_depth -= 1,
+                _ => {}
+            }
+            continue;
+        }
+        if let Event::Start(Tag::Link { link_type, .. } | Tag::Image { link_type, .. }) = &event
+            && matches!(link_type, LinkType::Shortcut | LinkType::Collapsed)
+        {
+            state.inline.push_str(&input[range.clone()]);
+            if *link_type == LinkType::Collapsed && !input[range].ends_with("[]") {
+                state.inline.push_str("[]");
+            }
+            state.previous_was_emphasis_end = false;
+            verbatim_link_depth = 1;
+            continue;
+        }
+        let boundary = if matches!(event, Event::End(_)) {
+            range.end
+        } else {
+            range.start
+        };
+        while definitions
+            .peek()
+            .is_some_and(|definition| definition.end <= boundary)
+        {
+            let definition = definitions.next().expect("peeked definition exists");
+            state.emit_reference_definitions(&input[definition]);
+        }
+        if matches!(event, Event::Start(Tag::CodeBlock(_))) {
+            state.code_block_fence = code_fences.next().expect("one fence per code block");
+        }
+        if matches!(event, Event::Start(Tag::List(_))) {
+            state
+                .list_is_loose
+                .push(loose_lists.next().expect("one looseness value per list"));
+        }
         state.next_is_unordered_list = next_is_ul;
         state.next_text_char = next_char;
-        state.process(event);
+        state.process(event, &input[range]);
     }
 
+    for definition in definitions {
+        state.emit_reference_definitions(&input[definition]);
+    }
     state.finish()
+}
+
+// Paragraph events identify loose lists, but the first item can contain only
+// nested blocks. Determine looseness before writing any item markers.
+fn list_looseness(events: &[(Event<'_>, Range<usize>)]) -> Vec<bool> {
+    let mut lists = Vec::new();
+    let mut stack = Vec::new();
+    for (event, _) in events {
+        match event {
+            Event::Start(Tag::List(_)) => {
+                stack.push(lists.len());
+                lists.push(false);
+            }
+            Event::Start(Tag::Paragraph) => {
+                if let Some(&index) = stack.last() {
+                    lists[index] = true;
+                }
+            }
+            Event::End(TagEnd::List(_)) => {
+                stack.pop();
+            }
+            _ => {}
+        }
+    }
+    lists
+}
+
+fn reference_definition_ranges(input: &str, parser: &Parser<'_>) -> Vec<Range<usize>> {
+    let mut ranges: Vec<_> = parser
+        .reference_definitions()
+        .iter()
+        .map(|(_, definition)| {
+            let start = input[..definition.span.start]
+                .rfind('\n')
+                .map_or(0, |offset| offset + 1);
+            let end = input[definition.span.end..]
+                .find('\n')
+                .map_or(input.len(), |offset| definition.span.end + offset + 1);
+            start..end
+        })
+        .collect();
+    // The parser retains only the first definition of a repeated label.
+    // Search omitted lines, not visible prose that happens to resemble a definition.
+    let protected: Vec<_> = Parser::new_ext(input, mk_options())
+        .into_offset_iter()
+        .filter_map(|(event, range)| {
+            matches!(
+                event,
+                Event::Start(Tag::CodeBlock(_) | Tag::HtmlBlock)
+                    | Event::Text(_)
+                    | Event::Code(_)
+                    | Event::InlineHtml(_)
+            )
+            .then_some(range)
+        })
+        .collect();
+    let mut offset = 0;
+    for line in input.split_inclusive('\n') {
+        if line.contains("]:")
+            && !ranges.iter().any(|range| range.contains(&offset))
+            && !protected
+                .iter()
+                .any(|range| range.start < offset + line.len() && range.end > offset)
+        {
+            let candidate = Parser::new_ext(&input[offset..], mk_options());
+            for (_, definition) in candidate.reference_definitions().iter() {
+                if definition.span.start < line.len() {
+                    let end = offset + definition.span.end;
+                    let end = input[end..]
+                        .find('\n')
+                        .map_or(input.len(), |next| end + next + 1);
+                    ranges.push(offset..end);
+                }
+            }
+        }
+        offset += line.len();
+    }
+    ranges.sort_by_key(|range| range.start);
+    let mut groups: Vec<Range<usize>> = Vec::new();
+    for range in ranges {
+        if let Some(previous) = groups.last_mut()
+            && range.start <= previous.end
+        {
+            previous.end = previous.end.max(range.end);
+        } else {
+            groups.push(range);
+        }
+    }
+    groups
+}
+
+fn reference_suffix(kind: LinkType, source: &str) -> Option<String> {
+    match kind {
+        LinkType::Shortcut => Some("]".to_owned()),
+        LinkType::Collapsed => Some("][]".to_owned()),
+        LinkType::Reference => {
+            let start = source
+                .rmatch_indices('[')
+                .find(|(offset, _)| {
+                    source[..*offset]
+                        .chars()
+                        .rev()
+                        .take_while(|&ch| ch == '\\')
+                        .count()
+                        % 2
+                        == 0
+                })?
+                .0;
+            Some(format!("]{}", &source[start..]))
+        }
+        _ => None,
+    }
+}
+
+fn code_block_fences(events: &[(Event<'_>, Range<usize>)]) -> Vec<String> {
+    let mut fences = Vec::new();
+    let mut current = None;
+    for (event, _) in events {
+        match event {
+            Event::Start(Tag::CodeBlock(kind)) => {
+                let marker = match kind {
+                    CodeBlockKind::Fenced(info) if info.contains('`') => '~',
+                    _ => '`',
+                };
+                current = Some((marker, 3, 0));
+            }
+            Event::Text(text) => {
+                if let Some((marker, length, run)) = &mut current {
+                    for ch in text.chars() {
+                        *run = if ch == *marker { *run + 1 } else { 0 };
+                        *length = (*length).max(*run + 1);
+                    }
+                }
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                let (marker, length, _) = current.take().expect("code block start precedes end");
+                fences.push(marker.to_string().repeat(length));
+            }
+            _ => {}
+        }
+    }
+    fences
 }
 
 fn mk_options() -> Options {
@@ -53,6 +250,15 @@ fn mk_options() -> Options {
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_HEADING_ATTRIBUTES
+}
+
+pub(crate) fn emphasis_delimiter(strong: bool, alternate: bool) -> &'static str {
+    match (strong, alternate) {
+        (false, false) => "*",
+        (false, true) => "_",
+        (true, false) => "**",
+        (true, true) => "__",
+    }
 }
 
 #[allow(clippy::struct_excessive_bools)] // each bool is a distinct formatting phase flag
@@ -65,6 +271,7 @@ struct FormatterState {
     list_depth: usize,
     /// Start number for ordered list at each depth; None = unordered.
     list_starts: Vec<Option<u64>>,
+    list_is_loose: Vec<bool>,
     /// True when a list item was just opened but no Paragraph started yet (tight list).
     in_tight_item: bool,
 
@@ -77,13 +284,19 @@ struct FormatterState {
     // Code block state
     in_code_block: bool,
     code_block_indent: String,
+    code_block_fence: String,
+    code_content_start: usize,
+    verbatim_ranges: Vec<Range<usize>>,
 
     // Per-depth item marker widths (e.g. 3 for "1. ", 2 for "- "), used to
     // compute the continuation indent for code blocks inside list items.
     list_item_widths: Vec<usize>,
 
     // Link/image stack: stores (dest_url, title) from Start until End.
-    link_stack: Vec<(String, String)>,
+    link_stack: Vec<(String, String, Option<String>)>,
+    emphasis_delimiters: Vec<&'static str>,
+    previous_was_emphasis_end: bool,
+    footnote_paragraphs: Option<usize>,
 
     // Set by the outer format() loop before each event: true when the
     // immediately following event is Start(List(None)).  Used to detect
@@ -109,13 +322,20 @@ impl FormatterState {
             needs_blank: false,
             list_depth: 0,
             list_starts: Vec::new(),
+            list_is_loose: Vec::new(),
             in_tight_item: false,
             bq_depth: 0,
             inline: String::new(),
             in_code_block: false,
             code_block_indent: String::new(),
+            code_block_fence: String::new(),
+            code_content_start: 0,
+            verbatim_ranges: Vec::new(),
             list_item_widths: Vec::new(),
             link_stack: Vec::new(),
+            emphasis_delimiters: Vec::new(),
+            previous_was_emphasis_end: false,
+            footnote_paragraphs: None,
             next_is_unordered_list: false,
             next_text_char: None,
             table_alignments: Vec::new(),
@@ -126,9 +346,10 @@ impl FormatterState {
         }
     }
 
-    fn process(&mut self, event: Event<'_>) {
+    fn process(&mut self, event: Event<'_>, source: &str) {
+        let is_emphasis_end = matches!(event, Event::End(TagEnd::Emphasis | TagEnd::Strong));
         match event {
-            Event::Start(tag) => self.on_start(tag),
+            Event::Start(tag) => self.on_start(tag, source),
             Event::End(tag) => self.on_end(tag),
             Event::Text(t) => self.on_text(&t),
             Event::Code(c) => self.emit_inline_code(&c),
@@ -164,16 +385,32 @@ impl FormatterState {
             }
             _ => {}
         }
+        self.previous_was_emphasis_end = is_emphasis_end;
+    }
+
+    fn start_emphasis(&mut self, strong: bool) {
+        // Adjacent sibling spans can merge or stop parsing when both use '*'.
+        let alternate = self.previous_was_emphasis_end && self.inline.ends_with('*');
+        let delimiter = emphasis_delimiter(strong, alternate);
+        self.emphasis_delimiters.push(delimiter);
+        self.inline.push_str(delimiter);
     }
 
     #[allow(clippy::too_many_lines)] // exhaustive match over pulldown-cmark Tag variants
-    fn on_start(&mut self, tag: Tag<'_>) {
+    fn on_start(&mut self, tag: Tag<'_>, source: &str) {
         match tag {
             Tag::Paragraph => {
                 // Inside a list, don't emit a blank before the paragraph—
                 // the item marker was already written.
                 if self.list_depth == 0 {
                     self.emit_blank_if_needed();
+                } else if !self.in_tight_item {
+                    // A later paragraph must not become lazy continuation text
+                    // belonging to a preceding nested list.
+                    self.needs_blank = true;
+                    self.emit_blank_if_needed();
+                    self.write_bq_prefix();
+                    self.out.push_str(&self.list_continuation_prefix());
                 }
                 self.in_tight_item = false;
             }
@@ -208,13 +445,13 @@ impl FormatterState {
                     self.write_bq_prefix();
                 }
                 self.out.push_str(&fence_indent);
-                self.out.push_str("```");
+                self.out.push_str(&self.code_block_fence);
                 self.out.push_str(&lang);
                 self.out.push('\n');
                 self.in_code_block = true;
+                self.code_content_start = self.out.len();
             }
             Tag::List(start) => {
-                self.list_item_widths.push(0);
                 if self.list_depth == 0 {
                     self.emit_blank_if_needed();
                 } else {
@@ -225,7 +462,7 @@ impl FormatterState {
                     // (e.g. `Text("Item 1")` in `- Item 1\n  - Nested`).
                     if self.in_tight_item && !self.inline.is_empty() {
                         let text = std::mem::take(&mut self.inline);
-                        let prefix = "  ".repeat(self.list_depth);
+                        let prefix = self.list_continuation_prefix();
                         self.flush_inline_text(&text, &prefix);
                         self.in_tight_item = false;
                     } else if self.in_tight_item {
@@ -236,22 +473,38 @@ impl FormatterState {
                         self.in_tight_item = false;
                     }
                 }
+                // A non-1 ordered marker cannot interrupt the parent paragraph.
+                if self.list_depth > 0 && start.is_some_and(|number| number != 1) {
+                    self.out.push('\n');
+                }
+                self.list_item_widths.push(0);
                 self.list_depth += 1;
-                // Ordered lists always start at 1 in canonical form (MD029).
-                self.list_starts.push(start.map(|_| 1u64));
+                self.list_starts.push(start);
             }
             Tag::Item => {
                 // For loose lists, End(Paragraph) sets needs_blank = true.
                 // Emit that blank before the next item marker.
+                if self.list_is_loose.last() == Some(&true)
+                    && self.list_item_widths.last().is_some_and(|width| *width > 0)
+                {
+                    self.needs_blank = true;
+                }
                 if self.list_depth > 0 {
                     self.emit_blank_if_needed();
                 }
                 self.in_tight_item = true;
-                let indent = "  ".repeat(self.list_depth.saturating_sub(1));
+                let parent_width = self
+                    .list_item_widths
+                    .iter()
+                    .rev()
+                    .nth(1)
+                    .copied()
+                    .unwrap_or(0);
+                let indent = " ".repeat(parent_width);
                 let marker = match self.list_starts.last_mut() {
                     Some(Some(n)) => {
                         let s = format!("{indent}{n}. ");
-                        *n += 1;
+                        *n = 1;
                         s
                     }
                     _ => format!("{indent}- "),
@@ -262,21 +515,33 @@ impl FormatterState {
                 self.write_bq_prefix();
                 self.out.push_str(&marker);
             }
-            Tag::Emphasis => self.inline.push('*'),
-            Tag::Strong => self.inline.push_str("**"),
+            Tag::Emphasis => self.start_emphasis(false),
+            Tag::Strong => self.start_emphasis(true),
             Tag::Strikethrough => self.inline.push_str("~~"),
             Tag::Link {
-                dest_url, title, ..
+                dest_url,
+                title,
+                link_type,
+                ..
             } => {
-                self.link_stack
-                    .push((dest_url.into_string(), title.into_string()));
+                self.link_stack.push((
+                    dest_url.into_string(),
+                    title.into_string(),
+                    reference_suffix(link_type, source),
+                ));
                 self.inline.push('[');
             }
             Tag::Image {
-                dest_url, title, ..
+                dest_url,
+                title,
+                link_type,
+                ..
             } => {
-                self.link_stack
-                    .push((dest_url.into_string(), title.into_string()));
+                self.link_stack.push((
+                    dest_url.into_string(),
+                    title.into_string(),
+                    reference_suffix(link_type, source),
+                ));
                 self.inline.push_str("![");
             }
             Tag::HtmlBlock => {
@@ -287,6 +552,7 @@ impl FormatterState {
                 self.bq_depth += 1;
             }
             Tag::FootnoteDefinition(label) => {
+                self.footnote_paragraphs = Some(0);
                 self.emit_blank_if_needed();
                 // Write the label prefix; body will be flushed inline.
                 self.write_bq_prefix();
@@ -323,8 +589,15 @@ impl FormatterState {
                 if !text.trim().is_empty() {
                     if self.list_depth == 0 {
                         self.write_bq_prefix();
+                        if self.footnote_paragraphs.is_some_and(|count| count > 0) {
+                            self.out.push_str("    ");
+                        }
                     }
-                    let prefix = "  ".repeat(self.list_depth);
+                    let mut prefix = self.list_continuation_prefix();
+                    if let Some(count) = &mut self.footnote_paragraphs {
+                        prefix.insert_str(0, "    ");
+                        *count += 1;
+                    }
                     self.flush_inline_text(&text, &prefix);
                     self.needs_blank = true;
                 }
@@ -349,9 +622,11 @@ impl FormatterState {
                 if !self.out.ends_with('\n') {
                     self.out.push('\n');
                 }
+                self.verbatim_ranges.push(self.code_content_start..self.out.len());
                 self.write_bq_prefix();
                 self.out.push_str(&self.code_block_indent.clone());
-                self.out.push_str("```\n");
+                self.out.push_str(&self.code_block_fence);
+                self.out.push('\n');
                 self.in_code_block = false;
                 self.code_block_indent = String::new();
                 self.needs_blank = true;
@@ -359,6 +634,7 @@ impl FormatterState {
             TagEnd::List(_) => {
                 self.list_depth -= 1;
                 self.list_starts.pop();
+                self.list_is_loose.pop();
                 self.list_item_widths.pop();
                 if self.list_depth == 0 {
                     if self.next_is_unordered_list {
@@ -381,17 +657,22 @@ impl FormatterState {
                         // Empty tight item: the marker was already written; just terminate the line.
                         self.out.push('\n');
                     } else {
-                        let prefix = "  ".repeat(self.list_depth);
+                        let prefix = self.list_continuation_prefix();
                         self.flush_inline_text(&text, &prefix);
                     }
                     self.in_tight_item = false;
                 }
-            TagEnd::Emphasis => self.inline.push('*'),
-            TagEnd::Strong => self.inline.push_str("**"),
+            TagEnd::Emphasis | TagEnd::Strong => {
+                self.inline.push_str(
+                    self.emphasis_delimiters.pop().expect("emphasis start precedes end"),
+                );
+            }
             TagEnd::Strikethrough => self.inline.push_str("~~"),
             TagEnd::Link | TagEnd::Image => {
-                if let Some((dest, title)) = self.link_stack.pop() {
-                    if title.is_empty() {
+                if let Some((dest, title, suffix)) = self.link_stack.pop() {
+                    if let Some(suffix) = suffix {
+                        self.inline.push_str(&suffix);
+                    } else if title.is_empty() {
                         write!(self.inline, "]({dest})").expect("writing to String is infallible");
                     } else {
                         write!(self.inline, "]({dest} \"{title}\")").expect("writing to String is infallible");
@@ -409,6 +690,7 @@ impl FormatterState {
                 self.needs_blank = true;
             }
             TagEnd::FootnoteDefinition => {
+                self.footnote_paragraphs = None;
                 let text = std::mem::take(&mut self.inline);
                 self.flush_inline_text(&text, "");
                 self.needs_blank = true;
@@ -475,6 +757,8 @@ impl FormatterState {
 
     fn on_text(&mut self, text: &str) {
         if self.in_code_block {
+            let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+            let text = normalized.as_str();
             // Code block content goes directly to output, with list
             // continuation indent re-added (pulldown-cmark strips it).
             // When inside a blockquote, each content line also needs the
@@ -518,6 +802,7 @@ impl FormatterState {
                 match ch {
                     '\\' => s.push_str("\\\\"),
                     '`' => s.push_str("\\`"),
+                    '*' => s.push_str("\\*"),
                     // A literal `<` in a Text event (pulldown only emits `<` as text
                     // when it does NOT already open a tag).  Left bare, adjacent text
                     // can reconstruct an autolink or HTML tag on re-parse (e.g.
@@ -554,6 +839,26 @@ impl FormatterState {
             }
             self.inline.push_str(&s);
         }
+    }
+
+    fn emit_reference_definitions(&mut self, source: &str) {
+        if self.in_tight_item && self.inline.is_empty() && !self.out.ends_with('\n') {
+            let start = self.out.rfind('\n').map_or(0, |offset| offset + 1);
+            self.out.truncate(start);
+            self.in_tight_item = false;
+        }
+        if !self.inline.is_empty() {
+            let text = std::mem::take(&mut self.inline);
+            self.flush_inline_text(&text, &self.list_continuation_prefix());
+            self.in_tight_item = false;
+            self.needs_blank = true;
+        }
+        self.emit_blank_if_needed();
+        self.out.push_str(source);
+        if !self.out.ends_with('\n') {
+            self.out.push('\n');
+        }
+        self.needs_blank = true;
     }
 
     fn emit_inline_code(&mut self, code: &str) {
@@ -605,28 +910,7 @@ impl FormatterState {
     /// Each line in `text` gets the blockquote prefix prepended (except the first,
     /// which follows whatever was already written on the current output line).
     fn flush_inline_text(&mut self, text: &str, continuation_prefix: &str) {
-        // Strip trailing hard-break markers (`\\\n`) preceded by only whitespace.
-        // A `\` before a line ending that is at the end of a block is re-parsed by
-        // pulldown-cmark as a literal `\`, not a hard break — so emitting `\\\n` at
-        // the end of a paragraph breaks idempotency (the formatter doubles the `\`
-        // on the second pass).  A trailing hard break is always a no-op: there is
-        // nothing on the "next line" for the break to separate.
-        let text = {
-            let s = text.trim_end_matches(|c: char| c != '\n' && c.is_whitespace());
-            // Strip a trailing hard-break marker only when the backslash run before
-            // `\n` is odd: even runs are content pairs (`\\` = literal `\`) and must
-            // not be removed.  An odd run = zero or more content pairs + one marker.
-            if let Some(stripped) = s.strip_suffix('\n') {
-                let run = stripped.chars().rev().take_while(|&c| c == '\\').count();
-                if run % 2 == 1 {
-                    &stripped[..stripped.len() - 1]
-                } else {
-                    text
-                }
-            } else {
-                text
-            }
-        };
+        let text = sentences::format(strip_terminal_hard_break(text), mk_options());
         let bq = "> ".repeat(self.bq_depth);
         let mut lines = text.split('\n').peekable();
 
@@ -672,7 +956,19 @@ impl FormatterState {
         let s = std::mem::take(&mut self.out);
         let mut result: Vec<&str> = Vec::new();
         let mut prev_blank = false;
-        for line in s.lines() {
+        let mut offset = 0;
+        for raw_line in s.split_inclusive('\n') {
+            let preserve = self
+                .verbatim_ranges
+                .iter()
+                .any(|range| range.contains(&offset));
+            offset += raw_line.len();
+            let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+            if preserve {
+                result.push(line);
+                prev_blank = false;
+                continue;
+            }
             let line = line.trim_end();
             if line.is_empty() {
                 if !prev_blank {
@@ -701,6 +997,19 @@ impl FormatterState {
         }
         format!("{trimmed}\n")
     }
+}
+
+/// A terminal hard break cannot separate any content and becomes a literal
+/// backslash on reparse. Preserve escaped content pairs but remove the marker.
+fn strip_terminal_hard_break(text: &str) -> &str {
+    let s = text.trim_end_matches(|c: char| c != '\n' && c.is_whitespace());
+    if let Some(stripped) = s.strip_suffix('\n') {
+        let run = stripped.chars().rev().take_while(|&c| c == '\\').count();
+        if run % 2 == 1 {
+            return &stripped[..stripped.len() - 1];
+        }
+    }
+    text
 }
 
 /// Collapse the break markers inside a heading's inline buffer to single spaces.
@@ -942,50 +1251,25 @@ mod tests {
 
     #[test]
     fn test_ordered_list() {
-        let input = indoc! {"
-            1. First
-            2. Second
-            3. Third"};
-        let output = format(input);
-        assert_eq!(
-            output,
-            indoc! {"
-                1. First
-                2. Second
-                3. Third
-            "}
+        assert_formats_to(
+            "1. First\n2. Second\n3. Third",
+            "1. First\n1. Second\n1. Third\n",
         );
     }
 
     #[test]
-    fn test_ordered_list_all_ones_renumbered() {
-        // "one" style (1. / 1. / 1.) is canonicalized to sequential.
+    fn test_ordered_list_all_ones_unchanged() {
         assert_formats_to(
-            indoc! {"
-                1. First
-                1. Second
-                1. Third"},
-            indoc! {"
-                1. First
-                2. Second
-                3. Third
-            "},
+            "1. First\n1. Second\n1. Third\n",
+            "1. First\n1. Second\n1. Third\n",
         );
     }
 
     #[test]
-    fn test_ordered_list_non_one_start_renumbered() {
-        // Lists starting at a number other than 1 are renumbered from 1.
+    fn test_ordered_list_non_one_start_preserved() {
         assert_formats_to(
-            indoc! {"
-                3. First
-                5. Second
-                9. Third"},
-            indoc! {"
-                1. First
-                2. Second
-                3. Third
-            "},
+            "3. First\n5. Second\n9. Third",
+            "3. First\n1. Second\n1. Third\n",
         );
     }
 
@@ -1383,13 +1667,13 @@ mod tests {
                enabled = false
                ```
 
-            2. **Another item:**
+            1. **Another item:**
 
                ```toml
                line_length = 100
                ```
         "};
-        // Starting with `1. / 1.` triggers MD029 renumbering in the formatter.
+        // Repeated markers keep continuation indentation stable.
         assert_formats_to(
             indoc! {"
                 1. **Enable rule:**

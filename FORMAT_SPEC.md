@@ -11,6 +11,7 @@ formatter implementation work. Any ambiguity about what the formatter should pro
 2. **Idempotency is a hard requirement.** Formatting an already-formatted file produces no changes.
 3. **Semantic equivalence.** The formatter never changes meaning — only surface syntax.
 4. **No configuration.** The formatter is opinionated. If you disagree with a choice, open an issue.
+5. **Keep edits local.** A content edit must not renumber later items, resize unrelated table rows, or reflow prose to a width limit.
 
 ---
 
@@ -99,18 +100,20 @@ Always use `-` (dash). Never `*` or `+`.
 
 ### Ordered List Markers (MD029)
 
-Always use sequential numbering starting from `1.`. Items are renumbered regardless of
-what numbers appear in the source — non-contiguous or repeated numbers are corrected.
+Preserve the first marker's number, because it controls the rendered starting number.
+Use `1.` for all subsequent items, because Markdown renders them sequentially regardless of their source numbers.
+Inserting an item must not renumber unrelated source lines.
 
 ```markdown
 1. First item
-2. Second item
-3. Third item
+1. Second item
+1. Third item
 ```
 
 ### List Indentation (MD007)
 
-Nested list items are indented by 2 spaces relative to their parent marker.
+Align nested markers and continuation lines with the parent's content column.
+An unordered marker uses 2 spaces; an ordered marker uses its emitted width, including the number, period, and space.
 
 ```markdown
 - Top level
@@ -120,11 +123,17 @@ Nested list items are indented by 2 spaces relative to their parent marker.
 
 ### Blank Lines Around Lists (MD032)
 
-Lists are preceded and followed by exactly one blank line (same rule as other block elements).
+Top-level lists are preceded and followed by exactly one blank line (same rule as other block elements).
+Preserve tight or loose list semantics.
+Separate items in loose lists with one blank line, including when an item ends with a nested block.
+Keep separate paragraphs in an item separated and indented so they cannot become text in a nested child item.
 
 ### Code Fences (MD048)
 
-Always use backticks (`` ` ``). Always use exactly three backticks. Never tildes (`~~~`).
+Use three backticks (`` ` ``) by default.
+Use a longer fence when code contains a run of three or more backticks.
+The fence must be longer than every run of its marker character in the code.
+Use tilde fences when the language information contains a backtick, because CommonMark forbids backticks in the information string of a backtick fence.
 
 ````markdown
 ```language
@@ -137,17 +146,20 @@ present in the source; it does not infer or remove language tags.
 
 ### Emphasis (MD049)
 
-Always use `*` for emphasis (italic). Never `_`.
+Use `*` for emphasis (italic) by default.
+Use `_` for an adjacent emphasis span when asterisks would merge the delimiters and change the parsed content.
 
 ```markdown
 This is *important*.
 ```
 
 Exception: underscores inside words (snake_case identifiers) are not emphasis and are not modified.
+Literal asterisks in paragraph or heading text are escaped so that they cannot become emphasis markers.
 
 ### Strong Emphasis (MD050)
 
-Always use `**` for strong (bold). Never `__`.
+Use `**` for strong (bold) by default.
+Use `__` for an adjacent strong span when asterisks would merge the delimiters and change the parsed content.
 
 ```markdown
 This is **critical**.
@@ -155,8 +167,9 @@ This is **critical**.
 
 ### Trailing Whitespace (MD009)
 
-No trailing spaces or tabs on any line. Hard line breaks (two trailing spaces before a newline) are
-replaced with a `\` continuation character, then the trailing spaces are removed.
+No trailing spaces or tabs on prose lines.
+Code block contents are exempt and retain their whitespace and blank lines.
+Hard line breaks (two trailing spaces before a newline) are replaced with a `\` continuation character, then the trailing spaces are removed.
 
 ```markdown
 Line one\
@@ -169,6 +182,23 @@ All hard tabs in non-code content are replaced with spaces. The number of spaces
 expanding to the next 4-space tab stop.
 
 Tabs inside fenced code blocks and indented code blocks are preserved verbatim.
+
+### Prose Sentence Boundaries
+
+Prefer one sentence per source line where the boundary is unambiguous to the formatter.
+Add a soft line break after `.`, `!`, or `?` followed by horizontal whitespace and an uppercase sentence start.
+Closing quotes and parentheses can occur before the whitespace, and opening quotes can precede the next sentence.
+Do not reflow to a column limit or join existing source lines.
+Preserve existing clause breaks and hard line breaks.
+
+Treat common abbreviations, initials, decimals, ellipses, URLs, and filenames as ambiguous rather than guessing their sentence boundaries.
+Leave lowercase and numeric sentence starts unchanged.
+Do not split inside emphasis, strikethrough, code spans, links, images, or reference labels.
+Leave paragraphs containing inline HTML unchanged.
+Headings, table cells, code blocks, and reference definitions do not receive sentence breaks.
+
+Apply the same prose policy inside list items, blockquotes, and footnotes.
+Indent new continuation lines by the emitted list marker width or footnote prefix so they stay in the original block.
 
 ### Multiple Consecutive Blank Lines (MD012)
 
@@ -193,9 +223,18 @@ block elements).
 
 ### Link and Image Style (MD054)
 
-The formatter does not rewrite link or image syntax between styles (inline vs. reference).
-It does remove unnecessary angle brackets from URLs that do not require them per CommonMark
-(MD034).
+Preserve inline, full-reference, collapsed-reference, and shortcut link and image styles.
+Preserve reference labels, definition order, unused definitions, and duplicate definitions.
+Collapsed and shortcut labels retain their source text because changing that text can change the reference identity.
+Never generate numbered reference labels or sort definitions after unrelated edits.
+The formatter can remove unnecessary angle brackets from inline URLs that do not require them per CommonMark (MD034).
+
+### Tables (MD055, MD060)
+
+Write one row per source line, with leading and trailing pipes and one space around cell contents.
+Do not pad columns to the longest cell, because changing one cell must not resize unrelated rows.
+Preserve each column's alignment semantics independently.
+Use `---`, `:---`, `---:`, or `:---:` separator cells without width-dependent padding.
 
 ### Blockquotes (MD027, MD028)
 
@@ -240,8 +279,8 @@ verbatim. The formatter does not modify front matter content.
 
 ## What the Formatter Does NOT Change
 
-- **Paragraph text.** The formatter does not reflow paragraphs to a line length. Line breaks within
-  paragraphs are preserved (soft wrapping is the renderer's job, not the formatter's).
+- **Paragraph content.** Do not change words or punctuation.
+  Preserve existing soft and hard breaks, and add conservative sentence-oriented soft breaks without width-based reflow.
 - **Code block contents.** The content inside fenced or indented code blocks is preserved
   character-for-character, including indentation, tabs, and blank lines.
 - **Inline code.** The content inside backtick spans is not modified.
@@ -249,9 +288,8 @@ verbatim. The formatter does not modify front matter content.
 - **Link/image URLs and titles.** Not reformatted.
 - **Heading text content.** The text of headings is preserved exactly; only the surrounding
   syntax (ATX vs setext, spacing) is canonicalized.
-- **Table content.** Cell content is preserved. Column alignment markers are preserved. Table
-  formatting (column widths, pipe alignment) may be normalized in a future version but is not
-  in scope for the initial implementation.
+- **Table content.** Cell content and column alignment semantics are preserved.
+  Cell padding is removed without aligning widths across rows.
 
 ---
 
@@ -262,7 +300,7 @@ Given any CommonMark-compliant input:
 1. `format(input)` produces output that is semantically equivalent to `input`.
 2. `format(format(input)) == format(input)` (idempotency).
 3. `format(input)` ends with exactly one `\n`.
-4. `format(input)` contains no trailing whitespace on any line.
+4. `format(input)` contains no trailing whitespace outside verbatim code and HTML.
 5. `format(input)` parses as valid CommonMark.
 
 ---
