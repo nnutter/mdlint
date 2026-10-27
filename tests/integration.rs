@@ -252,7 +252,7 @@ fn safe_formatter_delimiters_pass_style_checks() {
 #[test]
 fn unicode_line_length_diagnostic_uses_a_byte_column() {
     let config = Config {
-        default_enabled: false,
+        default_enabled: Some(false),
         rules: std::collections::HashMap::from([(
             "MD013".to_owned(),
             RuleConfig::Config(std::collections::HashMap::from([(

@@ -2018,7 +2018,7 @@ mod tests {
         assert_formats_to("  +++\nfoo\n+++\n", "\n+++\nfoo\n+++\n");
         assert_formats_to(
             "[ref]: https://example.com\n---\n---\n<!-- c -->",
-            "\n---\n\n---\n<!-- c -->\n",
+            "[ref]: https://example.com\n\n---\n\n---\n<!-- c -->\n",
         );
     }
 }

@@ -107,7 +107,8 @@ impl LintEngine {
             }
             // If default_enabled is true and no specific config exists, enable the rule
             None => enabled_if(
-                self.config.default_enabled() && !crate::config::OPT_IN_RULES.contains(&rule.name()),
+                self.config.default_enabled()
+                    && !crate::config::OPT_IN_RULES.contains(&rule.name()),
             ),
         }
     }

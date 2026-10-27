@@ -43,8 +43,8 @@ fn long_line_project() -> TempDir {
 }
 
 #[test]
-fn long_line_is_a_violation_without_config() {
-    assert_eq!(check_in(long_line_project().path()), 1);
+fn long_line_is_allowed_without_config() {
+    assert_eq!(check_in(long_line_project().path()), 0);
 }
 
 #[test]
@@ -58,12 +58,12 @@ fn pyproject_tool_table_configures_rules() {
             version = "0.1.0"
 
             [tool.mdlint.rules.MD013]
-            enabled = false
+            enabled = true
         "#},
     )
     .unwrap();
 
-    assert_eq!(check_in(dir.path()), 0);
+    assert_eq!(check_in(dir.path()), 1);
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn package_json_key_configures_rules() {
               "version": "1.0.0",
               "mdlint": {
                 "rules": {
-                  "MD013": { "enabled": false }
+                  "MD013": { "enabled": true }
                 }
               }
             }
@@ -85,20 +85,27 @@ fn package_json_key_configures_rules() {
     )
     .unwrap();
 
-    assert_eq!(check_in(dir.path()), 0);
+    assert_eq!(check_in(dir.path()), 1);
 }
 
 #[test]
 fn manifest_without_mdlint_section_is_ignored() {
     let dir = long_line_project();
+    let child = dir.path().join("child");
+    fs::create_dir(&child).unwrap();
+    fs::rename(dir.path().join("doc.md"), child.join("doc.md")).unwrap();
     fs::write(
-        dir.path().join("pyproject.toml"),
+        dir.path().join("mdlint.toml"),
+        "[rules.MD013]\nenabled = true\n",
+    )
+    .unwrap();
+    fs::write(
+        child.join("pyproject.toml"),
         "[project]\nname = \"example\"\n",
     )
     .unwrap();
-    fs::write(dir.path().join("package.json"), r#"{"name": "example"}"#).unwrap();
-
-    assert_eq!(check_in(dir.path()), 1);
+    fs::write(child.join("package.json"), r#"{"name": "example"}"#).unwrap();
+    assert_eq!(check_in(&child), 1);
 }
 
 #[test]
@@ -122,7 +129,7 @@ fn dedicated_config_wins_over_manifest() {
 fn explicit_config_flag_accepts_pyproject() {
     let dir = long_line_project();
     let manifest = dir.path().join("pyproject.toml");
-    fs::write(&manifest, "[tool.mdlint.rules.MD013]\nenabled = false\n").unwrap();
+    fs::write(&manifest, "[tool.mdlint.rules.MD013]\nenabled = true\n").unwrap();
 
     let status = Command::new(mdlint_bin())
         .args(["check", "--no-fix", "--config"])
@@ -133,7 +140,7 @@ fn explicit_config_flag_accepts_pyproject() {
         .status()
         .unwrap();
 
-    assert_eq!(status.code(), Some(0));
+    assert_eq!(status.code(), Some(1));
 }
 
 #[test]
