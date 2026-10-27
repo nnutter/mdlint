@@ -491,8 +491,7 @@ fn list_item_continuation_indented() {
               continuation here
         "},
         indoc! {"
-            - First line
-              continuation here
+            - First line continuation here
         "},
     );
 }
