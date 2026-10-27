@@ -45,10 +45,7 @@ impl Rule for MD009 {
                 continue;
             }
             let trimmed = line.trim_end();
-            // Counted in characters, as the Fixer counts columns: either side
-            // of the split may hold multibyte text (`’`, an ideographic space).
-            let content_chars = trimmed.chars().count();
-            let trailing_spaces = line.chars().count() - content_chars;
+            let trailing_spaces = line[trimmed.len()..].chars().count();
 
             if trailing_spaces > 0 {
                 // Allow br_spaces for line breaks unless strict mode
@@ -58,14 +55,14 @@ impl Rule for MD009 {
 
                 violations.push(Violation {
                     line: line_num + 1,
-                    column: Some(content_chars + 1),
+                    column: Some(trimmed.len() + 1),
                     rule: self.name().to_owned(),
                     message: format!("Trailing spaces ({trailing_spaces} spaces)"),
                     fix: Some(Fix {
                         line_start: line_num + 1,
                         line_end: line_num + 1,
-                        column_start: Some(content_chars + 1),
-                        column_end: Some(content_chars + trailing_spaces),
+                        column_start: Some(trimmed.len() + 1),
+                        column_end: Some(line.len()),
                         replacement: String::new(),
                         description: "Remove trailing spaces".to_owned(),
                     }),
