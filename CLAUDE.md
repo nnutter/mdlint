@@ -9,8 +9,7 @@ The formatter (`mdlint format`) enforces a canonical style by rewriting files.
 The linter
 (`mdlint check`) reports violations that fall outside what the formatter can fix automatically.
 
-Core principles: correctness over performance, type safety, minimal code, no duplication,
-comprehensive testing.
+Core principles: correctness over performance, type safety, minimal code, no duplication, comprehensive testing.
 
 ## Architecture
 
@@ -82,12 +81,10 @@ src/
   trailing-whitespace → end-of-file-fixer → actionlint → hadolint → tombi check → tombi format →
   clippy (with `--fix`) → rustfmt → cargo test → mdlint check (dogfood) → mdlint format (dogfood)
 - With `fail_fast`, each failure is one thing to fix; re-run after fixing until all hooks pass
-- Formatting hooks (rustfmt, tombi format, end-of-file-fixer, trailing-whitespace) modify files in
-  place and report failure — re-running immediately after often passes with no further changes needed
+- Formatting hooks (rustfmt, tombi format, end-of-file-fixer, trailing-whitespace) modify files in place and report failure — re-running immediately after often passes with no further changes needed
 - Clippy runs as errors: `-D warnings`; autofix (`--fix --allow-dirty`) applied before tests
 - Common fixes: `unwrap_or()` over manual `is_some()`, iterators over range loops, `!is_empty()`
-- Prefer functional patterns: `str::replace` over char loops, `"x".repeat(n)` over push loops,
-  bitflags OR operator over `.insert()` chains, `level as u8` over manual match-to-discriminant
+- Prefer functional patterns: `str::replace` over char loops, `"x".repeat(n)` over push loops, bitflags OR operator over `.insert()` chains, `level as u8` over manual match-to-discriminant
 - Extract long inline `match` arms to named methods; keep match arms as single expressions
 - Avoid bare `{}` scope blocks to limit variable lifetimes — restructure with `if let` or extract
 - Keep comments for *why*, not *what*; delete comments that restate adjacent code
@@ -97,13 +94,11 @@ src/
 - Test business logic, not libraries — focus on merge algorithms, discovery patterns, rule logic
 - `cargo test --lib` for unit tests via `src/lib.rs`; `tests/compatibility.rs` for Docker-based tests
 - Compatibility tests skip gracefully when Docker is unavailable
-- Property-based tests via `proptest`: generate random strings, verify formatter never panics, is
-  idempotent, and produces valid CommonMark
+- Property-based tests via `proptest`: generate random strings, verify formatter never panics, is idempotent, and produces valid CommonMark
 - **Every transformation test must cover both modes:**
   - Formatter tests: use `assert_formats_to(input, expected)` — verifies `format(input) == expected`
     AND `format(expected) == expected` (idempotency / not-fix side) in one call
-  - Lint rule tests: add an `apply_fixes` helper (calls `Fixer::apply_fixes_to_content`) and a
-    separate test that applies the violations to the input and asserts the corrected output
+  - Lint rule tests: add an `apply_fixes` helper (calls `Fixer::apply_fixes_to_content`) and a separate test that applies the violations to the input and asserts the corrected output
 - Write tests rather than running ad-hoc `cargo run` commands to verify behaviour
 - CLI integration tests (in `tests/formatter.rs`) invoke the binary via `Command`; always add
   `.stdout(Stdio::null()).stderr(Stdio::null())` so binary output doesn't pollute test output
@@ -112,12 +107,9 @@ src/
 
 - `Fix` struct uses **1-indexed** line/column numbers; `Fixer` converts to 0-indexed internally with
   `saturating_sub(1)` — rule implementations must use 1-indexed values (e.g. from `offset_to_line`)
-- Empty-replacement whole-line fix (`replacement: ""`, no column range) = **delete the line**;
-  the Fixer splices it out of the Vec rather than setting it to an empty string
-- Embedded newlines in a replacement string create extra lines in the output — used by some rules
-  (e.g. MD022) to insert blank lines around headings without requiring a multi-line fix range
-- Default config has `fix = true`, so `mdlint check` without an explicit config always applies
-  fixes; tests that verify the no-fix path must supply a config file with `fix = false`
+- Empty-replacement whole-line fix (`replacement: ""`, no column range) = **delete the line**; the Fixer splices it out of the Vec rather than setting it to an empty string
+- Embedded newlines in a replacement string create extra lines in the output — used by some rules (e.g. MD022) to insert blank lines around headings without requiring a multi-line fix range
+- Default config has `fix = true`, so `mdlint check` without an explicit config always applies fixes; tests that verify the no-fix path must supply a config file with `fix = false`
 
 ### CI/CD Architecture
 
@@ -151,19 +143,16 @@ src/
 
 1. Create `src/lint/rules/mdXXX.rs` and implement the `Rule` trait
    (`name`, `description`, `tags`, `check`).
-   Return `true` from `fixable()`
-   if `mdlint format` enforces this rule.
+   Return `true` from `fixable()` if `mdlint format` enforces this rule.
 1. Register it in `create_default_registry()` in `src/lint/rules/mod.rs`
-1. Write tests in the same file — both a violation-detection test and a fix-application test
-   (see Testing Strategy: every transformation test must cover both modes)
+1. Write tests in the same file — both a violation-detection test and a fix-application test (see Testing Strategy: every transformation test must cover both modes)
 
 ### Adding a formatting behavior
 
 1. Document the style decision in `FORMAT_SPEC.md` first — it is the source of truth
 1. Implement in `src/formatter/mod.rs` by handling the relevant pulldown-cmark events
 1. Constraint: `format(format(x)) == format(x)` — idempotency is non-negotiable
-1. If the behavior maps to a lint rule, set `fixable() = true` and ensure `mdlint format`
-   and `mdlint check --fix` produce identical output for that rule
+1. If the behavior maps to a lint rule, set `fixable() = true` and ensure `mdlint format` and `mdlint check --fix` produce identical output for that rule
 
 ### Adding a new platform
 
@@ -176,8 +165,7 @@ Keep package platform detection and the supported-platform documentation in sync
 When editing any of them:
 
 - Copy changes to all three.
-  The only intentional differences are the Installation section
-  (package-manager specific), the "How it works" section (platform/binary table), and the
+  The only intentional differences are the Installation section (package-manager specific), the "How it works" section (platform/binary table), and the
   Contributing section (package-specific build/release steps with a link to the main repo).
 - Relative links (e.g. `mdlint.default.toml`) become absolute GitHub URLs in the sub-package READMEs.
 

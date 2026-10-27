@@ -20,7 +20,7 @@ Run `mdlint format` and stop thinking about it.
 - **Fast**: written in Rust for performance
 - **Portable**: single, small, 0-dependency binary (Linux x86_64/ARM64, macOS Intel/Apple Silicon, Windows)
 - **Git-aware**: respects `.gitignore` files by default
-- **Git-friendly style**: stable list markers, compact tables, preserved references, and conservative sentence breaks keep content edits local
+- **Git-friendly style**: stable list markers, compact tables, preserved references, and joined wrapped sentences keep content edits local
 
 ## Quickstart
 
@@ -130,8 +130,8 @@ Options:
 
 Formatting favors small, understandable Git diffs without changing Markdown meaning.
 
-- **Prose:** Add conservative sentence-oriented soft breaks, without a column limit or width-based reflow.
-  Preserve existing clause breaks and hard line breaks; leave ambiguous boundaries alone.
+- **Prose:** Join a soft break that continues the same sentence. Do not split sentences or reflow to a column limit.
+  Preserve hard line breaks and ambiguous boundaries.
 - **Ordered lists:** Keep the first number, including an intentional non-1 start, and use `1.` for later items.
   Inserting an item must not renumber the remaining list.
 - **References:** Preserve inline, full-reference, collapsed-reference, and shortcut links and images.
@@ -166,17 +166,14 @@ Options:
 
 #### markdownlint-cli2
 
-Supports `.markdownlint-cli2.{json,jsonc,yaml,yml}` and standalone `.markdownlint.{json,jsonc,yaml,yml}` rule
-configs, and falls back to the `"markdownlint-cli2"` field in `package.json` if no dedicated config file is found.
+Supports `.markdownlint-cli2.{json,jsonc,yaml,yml}` and standalone `.markdownlint.{json,jsonc,yaml,yml}` rule configs, and falls back to the `"markdownlint-cli2"` field in `package.json` if no dedicated config file is found.
 Rule names and their common aliases (e.g. `line-length` for `MD013`) are both recognized.
 The `gitignore`,
 `noInlineConfig`, and `frontMatterPattern` cli2 options map onto mdlint's equivalent `gitignore`, `no_inline_config`,
 and `front_matter` settings. `.cjs`/`.mjs` configs are evaluated with a Node.js runtime when one is found on `PATH`
 (the same thing `markdownlint-cli2` itself would do when loading them), correctly resolving `require()`, spread
 syntax, and computed values.
-If Node isn't available, mdlint falls back to a best-effort text scrape and warns that
-dynamic values may not have been resolved; if a config can't be parsed either way, migration fails with a message
-asking you to export it with `console.log(JSON.stringify(config))` and migrate the resulting JSON file instead.
+If Node isn't available, mdlint falls back to a best-effort text scrape and warns that dynamic values may not have been resolved; if a config can't be parsed either way, migration fails with a message asking you to export it with `console.log(JSON.stringify(config))` and migrate the resulting JSON file instead.
 Rules with no mdlint implementation, and cli2-specific fields with no mdlint equivalent (`globs`, `customRules`,
 `outputFormatters`), are skipped with a warning rather than failing the migration.
 
@@ -223,8 +220,7 @@ mdlint migrate --from markdownlint-cli2 .markdownlint-cli2.jsonc --output mdlint
 ## Configuration
 
 mdlint uses TOML configuration files, discovered by searching upward from the current directory.
-The tool searches for
-these files in order (first found wins per directory level), walking up from the current directory:
+The tool searches for these files in order (first found wins per directory level), walking up from the current directory:
 
 1. `mdlint.toml`
 1. `.mdlint.toml`
@@ -234,8 +230,7 @@ Planned: `package.json` and `pyproject.toml` support.
 ### Configuration hierarchy
 
 Configs are discovered by walking up the directory tree.
-Scalar values from closer configs override those farther away;
-arrays are extended.
+Scalar values from closer configs override those farther away; arrays are extended.
 Priority order (highest to lowest):
 
 1. `--config` flag on the CLI
@@ -315,8 +310,7 @@ This line may be longer than the configured limit.
 | `<!-- mdlint-enable -->` | Re-enable all rules |
 
 Multiple rules: `<!-- mdlint-disable MD001 MD013 -->` — space-separate rule codes.
-Set `no_inline_config = true`
-in `mdlint.toml` to ignore all inline comments project-wide.
+Set `no_inline_config = true` in `mdlint.toml` to ignore all inline comments project-wide.
 
 ## Exit Codes
 
@@ -329,9 +323,7 @@ in `mdlint.toml` to ignore all inline comments project-wide.
 ## Rules
 
 Rules marked ✓ in the **Fix** column are auto-corrected by `mdlint check --fix` and `mdlint format`.
-Rules without ✓
-are reported by `mdlint check` only and require manual correction. **Default** shows mdlint's configured default for
-the rule's key parameter(s); **markdownlint** shows the
+Rules without ✓ are reported by `mdlint check` only and require manual correction. **Default** shows mdlint's configured default for the rule's key parameter(s); **markdownlint** shows the
 [original markdownlint](https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md) default where it differs from
 mdlint's.
 `off` marks optional policies disabled by default; their parameter defaults are documented in `mdlint.default.toml`.
