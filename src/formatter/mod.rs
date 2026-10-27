@@ -13,7 +13,7 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser,
 /// - Uses ATX-style headings
 /// - Uses `-` for unordered list markers
 /// - Uses safe backtick or tilde fences for code blocks
-/// - Adds conservative sentence breaks without width-based reflow
+/// - Joins a soft break that continues the same sentence, without splitting sentences or reflowing to a column limit
 #[must_use]
 pub fn format(input: &str) -> String {
     if input.trim().is_empty() {
