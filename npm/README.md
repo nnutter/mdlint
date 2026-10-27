@@ -224,18 +224,15 @@ dedicated file or inside a manifest your project already has. Within a directory
 settings wins:
 
 1. `mdlint.toml`
-2. `.mdlint.toml`
-3. `pyproject.toml` — under a `[tool.mdlint]` table
-4. `package.json` — under a top-level `"mdlint"` key
+1. `.mdlint.toml`
+1. `pyproject.toml` — under a `[tool.mdlint]` table
+1. `package.json` — under a top-level `"mdlint"` key
 
-A `pyproject.toml` or `package.json` without mdlint settings is not a config: the search walks past it to the parent
-directory, so an unrelated manifest never shadows a config higher up. Pointing `--config` at a manifest that has no
-mdlint section is an error rather than a silent fall back to defaults.
+A `pyproject.toml` or `package.json` without mdlint settings is not a config: the search walks past it to the parent directory, so an unrelated manifest never shadows a config higher up. Pointing `--config` at a manifest that has no mdlint section is an error rather than a silent fall back to defaults.
 
 ### pyproject.toml
 
-Options go under `[tool.mdlint]`, rules under `[tool.mdlint.rules.MDxxx]` — the same layout as `mdlint.toml`, nested
-one level deeper:
+Options go under `[tool.mdlint]`, rules under `[tool.mdlint.rules.MDxxx]` — the same layout as `mdlint.toml`, nested one level deeper:
 
 ```toml
 [tool.mdlint]
@@ -269,18 +266,16 @@ Options go under a top-level `"mdlint"` key. The keys are identical to the TOML 
 
 ### Configuration hierarchy
 
-Discovery walks up from the working directory to the filesystem root, taking **at most one config per directory** — the
-first of the four file names above that actually holds mdlint settings. Every config found along the way is merged,
-with the one nearest the working directory winning.
+Discovery walks up from the working directory to the filesystem root, taking **at most one config per directory** — the first of the four file names above that actually holds mdlint settings. Every config found along the way is merged, with the one nearest the working directory winning.
 
 Priority, highest to lowest:
 
 1. CLI flags — `--select`, `--ignore`, `--fix` / `--no-fix`, `--exclude`, `--no-respect-ignore`
-2. `--config <path>`, which **replaces discovery entirely**: no other config file is read, not even one in the working
-  directory
-3. The config in the working directory
-4. Configs in parent directories, nearest first, up to the filesystem root
-5. Built-in defaults
+1. `--config <path>`, which **replaces discovery entirely**: no other config file is read, not even one in the working
+   directory
+1. The config in the working directory
+1. Configs in parent directories, nearest first, up to the filesystem root
+1. Built-in defaults
 
 `--no-config` skips 2 through 4 and runs on built-in defaults alone.
 
@@ -289,8 +284,7 @@ How values from different configs combine:
 - **Scalars** — `default_enabled`, `fix`, `gitignore`, `no_inline_config`, `front_matter`: the nearest config that
   *sets* the option wins. A config that omits an option leaves whatever an outer config set it to, rather than
   resetting it to the built-in default.
-- **Arrays** — `exclude`, `custom_rules`: accumulate, so every config in the chain contributes its entries. There is
-  no way to remove an entry an outer config added.
+- **Arrays** — `exclude`, `custom_rules`: accumulate, so every config in the chain contributes its entries. There is no way to remove an entry an outer config added.
 - **`[rules.MDxxx]`**: merged per rule code. The nearest config that configures a rule replaces that rule's whole
   section — parameters are not merged one at a time, so a closer `line_length = 90` drops any other MD013 parameters
   an outer config had set.
@@ -360,21 +354,13 @@ See [`mdlint.default.toml`](https://github.com/nnutter/mdlint/blob/main/mdlint.d
 
 ### Front matter and comments
 
-YAML/TOML front matter is excluded from every rule and is not parsed as Markdown. A front matter `title` field is
-treated as the document's primary top-level heading, so MD025 (multiple top-level headings) and MD041 (first line
-should be a top-level heading) are satisfied by it instead of requiring a `#` heading in the body. As in markdownlint,
-the field is found by each rule's `front_matter_title` pattern, a case-insensitive regular expression matched against
-every front matter line (default `^\s*"?title"?\s*[:=]`); set it to `""` to turn this off. An invalid pattern is
-a configuration error.
+YAML/TOML front matter is excluded from every rule and is not parsed as Markdown. A front matter `title` field is treated as the document's primary top-level heading, so MD025 (multiple top-level headings) and MD041 (first line should be a top-level heading) are satisfied by it instead of requiring a `#` heading in the body. As in markdownlint, the field is found by each rule's `front_matter_title` pattern, a case-insensitive regular expression matched against every front matter line (default `^\s*"?title"?\s*[:=]`); set it to `""` to turn this off. An invalid pattern is a configuration error.
 
-HTML comments (`<!-- ... -->`, including multi-line comments) are excluded from every rule except MD013 (line
-length), since line length is a property of the raw line rather than of Markdown semantics. A `<!--` inside a code
-span or code block is literal text, not a comment.
+HTML comments (`<!-- ... -->`, including multi-line comments) are excluded from every rule except MD013 (line length), since line length is a property of the raw line rather than of Markdown semantics. A `<!--` inside a code span or code block is literal text, not a comment.
 
 ### Inline configuration
 
-Rules can be suppressed for specific lines using HTML comments. Both `mdlint-` and `markdownlint-` prefixes are
-accepted as equivalent aliases, so existing `markdownlint`/`markdownlint-cli2` comments keep working, except for the
+Rules can be suppressed for specific lines using HTML comments. Both `mdlint-` and `markdownlint-` prefixes are accepted as equivalent aliases, so existing `markdownlint`/`markdownlint-cli2` comments keep working, except for the
 `disable-file`, `enable-file`, and `configure-file` forms, which mdlint does not support:
 These directives suppress already-enabled rules; they do not enable optional policies.
 
@@ -398,10 +384,7 @@ This line may be longer than the configured limit.
 | `<!-- mdlint-capture -->` | Save the current enable/disable state |
 | `<!-- mdlint-restore -->` | Restore the most recently captured state |
 
-Multiple rules: `<!-- mdlint-disable MD001 MD013 -->` — space-separate rule names. As in markdownlint, a name may be a
-rule code, a markdownlint alias (`line-length`), or a tag (`headings`, covering every rule with it), in any case. Names
-mdlint does not know are ignored. `disable`/`enable` with no rule names applies to every rule; a rule-specific `enable`
-after a bare `disable` re-enables just that rule (e.g. `disable` then `enable MD013` means "all rules except MD013").
+Multiple rules: `<!-- mdlint-disable MD001 MD013 -->` — space-separate rule names. As in markdownlint, a name may be a rule code, a markdownlint alias (`line-length`), or a tag (`headings`, covering every rule with it), in any case. Names mdlint does not know are ignored. `disable`/`enable` with no rule names applies to every rule; a rule-specific `enable` after a bare `disable` re-enables just that rule (e.g. `disable` then `enable MD013` means "all rules except MD013").
 `capture`/`restore` nest like a stack, so a block of directives can be undone as a unit regardless of what state it
 started from. Directives shown inside a code span or code block are examples and have no effect.
 Set `no_inline_config = true` in `mdlint.toml` to ignore all inline comments project-wide.
