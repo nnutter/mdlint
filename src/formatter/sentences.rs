@@ -32,8 +32,10 @@ pub(super) fn format(text: &str, options: Options) -> String {
             Event::SoftBreak if protected_depth == 0 => {
                 if continues_sentence(&visible, &text[range.end..]) {
                     joins.push(soft_break_gap(text, range));
+                    visible.push(' ');
+                } else {
+                    visible.clear();
                 }
-                visible.clear();
             }
             Event::HardBreak => visible.clear(),
             _ => {}
