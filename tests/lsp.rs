@@ -109,7 +109,7 @@ fn invalid_configuration_is_reported_and_can_be_repaired() {
     assert_eq!(notification.method, "textDocument/publishDiagnostics");
     let diagnostics: PublishDiagnosticsParams =
         serde_json::from_value(notification.params).unwrap();
-    assert!(diagnostics.diagnostics.is_empty());
+    assert_eq!(diagnostics.diagnostics, [] as [lsp_types::Diagnostic; 0]);
 
     let action_params = serde_json::json!({
         "textDocument": {"uri": uri},

@@ -741,6 +741,55 @@ fn runtime_errors_are_reported_on_stderr() {
 // ── `mdlint check` CLI ───────────────────────────────────────────────────────
 
 #[test]
+fn check_reports_invalid_rule_parameter_and_exits_2() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("mdlint.toml");
+    fs::write(&config, "[rules.MD041]\nfront_matter_title = \"(\"\n").unwrap();
+    let file = dir.path().join("doc.md");
+    fs::write(&file, "# Heading\n").unwrap();
+
+    let output = Command::new(mdlint_bin())
+        .args([
+            "check",
+            "--config",
+            config.to_str().unwrap(),
+            file.to_str().unwrap(),
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.starts_with(
+            "error: Configuration error: rules.MD041: front_matter_title is not a valid regular expression"
+        ),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn check_fix_matches_format_when_fixes_share_a_line() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("doc.md");
+    let content = "# Title\n\nIntro\n## Heading\nBody\n";
+    fs::write(&file, content).unwrap();
+
+    Command::new(mdlint_bin())
+        .args(["check", "--fix", file.to_str().unwrap()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        formatter::format(content)
+    );
+}
+
+#[test]
 fn check_without_fix_does_not_modify_file() {
     // `check` with `fix = false` must never write to disk.
     // We supply an explicit config because the default has `fix = true`.
@@ -775,27 +824,6 @@ fn check_without_fix_does_not_modify_file() {
         after, content,
         "check with fix=false must not modify the file"
     );
-}
-
-#[test]
-fn check_reports_fix_failures_as_runtime_errors() {
-    let dir = TempDir::new().unwrap();
-    let file = dir.path().join("doc.md");
-    let original = "Text\n# Heading\nText\n";
-    fs::write(&file, original).unwrap();
-    let output = Command::new(mdlint_bin())
-        .args(["--no-config", "check", "--select", "MD022", "--fix"])
-        .arg(&file)
-        .current_dir(dir.path())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(2));
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("overlapping fix ranges"), "{stderr}");
-    assert_eq!(fs::read_to_string(file).unwrap(), original);
 }
 
 #[test]

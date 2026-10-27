@@ -45,7 +45,7 @@ impl Rule for MD009 {
                 continue;
             }
             let trimmed = line.trim_end();
-            let trailing_spaces = line.len() - trimmed.len();
+            let trailing_spaces = line[trimmed.len()..].chars().count();
 
             if trailing_spaces > 0 {
                 // Allow br_spaces for line breaks unless strict mode
@@ -156,6 +156,18 @@ mod tests {
                 Line 1
                 Line 2
             "}
+        );
+    }
+
+    #[test]
+    fn test_fix_on_line_with_multibyte_characters() {
+        let content = "We’ve got trailing spaces.   \n";
+        let parser = MarkdownParser::new(content);
+        let violations = MD009.check(&parser, None);
+
+        assert_eq!(
+            apply_fixes(content, &violations),
+            "We’ve got trailing spaces.\n"
         );
     }
 }

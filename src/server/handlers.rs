@@ -173,22 +173,26 @@ fn violations_to_actions(
 }
 
 fn publish_diagnostics(conn: &Connection, uri: &Uri, content: &str) {
-    let violations =
-        match load_config(uri).and_then(|config| LintEngine::new(config).lint_content(content)) {
-            Ok(violations) => violations,
-            Err(error) => {
-                let params = ShowMessageParams {
-                    typ: MessageType::ERROR,
-                    message: format!("{}: {error}", uri.as_str()),
-                };
-                let _ = conn.sender.send(Message::Notification(Notification::new(
-                    "window/showMessage".to_owned(),
-                    params,
-                )));
-                // Clear stale diagnostics without linting under unintended defaults.
-                Vec::new()
-            }
-        };
+    let violations = match load_config(uri).and_then(|config| {
+        let engine = LintEngine::new(config);
+        if let Err(error) = engine.validate() {
+            eprintln!("[mdlint-server] {error}");
+        }
+        engine.lint_content(content)
+    }) {
+        Ok(violations) => violations,
+        Err(error) => {
+            let params = ShowMessageParams {
+                typ: MessageType::ERROR,
+                message: format!("{}: {error}", uri.as_str()),
+            };
+            let _ = conn.sender.send(Message::Notification(Notification::new(
+                "window/showMessage".to_owned(),
+                params,
+            )));
+            Vec::new()
+        }
+    };
     let diagnostics = violations
         .iter()
         .map(|v| convert::violation_to_diagnostic(v, content))
