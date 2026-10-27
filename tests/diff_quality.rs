@@ -30,6 +30,9 @@ fn wrapped_sentences_are_joined_without_splitting_sentences() {
         "A wrapped\nsentence continues here.\n",
         "A wrapped sentence continues here.\n",
     );
+    for input in ["A\ra\ra", "A\na\na", "A\r\na\r\na"] {
+        assert_formats_to(input, "A a a\n");
+    }
 }
 
 #[test]

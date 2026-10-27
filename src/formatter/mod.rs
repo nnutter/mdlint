@@ -5,6 +5,8 @@ use std::ops::Range;
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 
+use crate::markdown::detect_front_matter;
+
 /// Format a Markdown document to canonical style.
 ///
 /// Returns the formatted document as a String. The output:
@@ -14,8 +16,38 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser,
 /// - Uses `-` for unordered list markers
 /// - Uses safe backtick or tilde fences for code blocks
 /// - Joins a soft break that continues the same sentence, without splitting sentences or reflowing to a column limit
+/// - Passes front matter through verbatim, one blank line above the body
 #[must_use]
 pub fn format(input: &str) -> String {
+    let Some(front_matter) = detect_front_matter(input) else {
+        let out = format_markdown(input);
+        // Canonical output can open like front matter where the input did not
+        // (`***` becomes `---`; leading spaces before `+++` are dropped). A
+        // leading blank line is invisible to CommonMark but stops detection.
+        return if detect_front_matter(&out).is_some() {
+            format!("\n{out}")
+        } else {
+            out
+        };
+    };
+    // Split after the closing delimiter's line. Front matter is not Markdown:
+    // formatted, `title: x` above the closing `---` becomes a setext heading.
+    let body_start: usize = input
+        .split_inclusive('\n')
+        .take(front_matter.end_line)
+        .map(str::len)
+        .sum();
+    let (raw, body) = input.split_at(body_start);
+    let raw: Vec<&str> = raw.lines().collect();
+    let body = format_markdown(body);
+    if body.is_empty() {
+        format!("{}\n", raw.join("\n"))
+    } else {
+        format!("{}\n\n{body}", raw.join("\n"))
+    }
+}
+
+fn format_markdown(input: &str) -> String {
     if input.trim().is_empty() {
         return String::new();
     }
@@ -26,6 +58,18 @@ pub fn format(input: &str) -> String {
         .into_iter()
         .peekable();
     let events: Vec<_> = parser.into_offset_iter().collect();
+    let attached: Vec<bool> = events
+        .iter()
+        .map(|(event, range)| match event {
+            Event::Start(Tag::HtmlBlock) if is_comment_block(input, range) => {
+                !line_before_is_blank(input, range.start)
+            }
+            Event::End(TagEnd::HtmlBlock) if is_comment_block(input, range) => {
+                !line_after_is_blank(input, range.end)
+            }
+            _ => false,
+        })
+        .collect();
     let mut code_fences = code_block_fences(&events).into_iter();
     let mut loose_lists = list_looseness(&events).into_iter();
 
@@ -49,8 +93,11 @@ pub fn format(input: &str) -> String {
         .collect();
 
     let mut verbatim_link_depth = 0;
-    for (((event, range), next_is_ul), next_char) in
-        events.into_iter().zip(lookahead).zip(next_text_char)
+    for ((((event, range), next_is_ul), next_char), attached) in events
+        .into_iter()
+        .zip(lookahead)
+        .zip(next_text_char)
+        .zip(attached)
     {
         if verbatim_link_depth > 0 {
             match event {
@@ -93,6 +140,7 @@ pub fn format(input: &str) -> String {
         }
         state.next_is_unordered_list = next_is_ul;
         state.next_text_char = next_char;
+        state.attached = attached;
         state.process(event, &input[range]);
     }
 
@@ -100,6 +148,37 @@ pub fn format(input: &str) -> String {
         state.emit_reference_definitions(&input[definition]);
     }
     state.finish()
+}
+
+/// An HTML block opened by `<!--` (`CommonMark` type 2): a comment, which runs
+/// to the line containing `-->`.
+fn is_comment_block(input: &str, range: &std::ops::Range<usize>) -> bool {
+    input
+        .get(range.clone())
+        .is_some_and(|block| block.trim_start().starts_with("<!--"))
+}
+
+/// A line is blank when only whitespace and blockquote markers remain.
+fn is_blank(line: &str) -> bool {
+    line.chars().all(|c| c.is_whitespace() || c == '>')
+}
+
+/// Whether the line above the one containing `offset` is blank, or missing.
+fn line_before_is_blank(input: &str, offset: usize) -> bool {
+    let line_start = input.get(..offset).and_then(|s| s.rfind('\n'));
+    line_start.is_none_or(|nl| {
+        let above = input.get(..nl).unwrap_or_default();
+        is_blank(above.rsplit('\n').next().unwrap_or_default())
+    })
+}
+
+/// Whether the line after a block ending at `end` is blank, or missing. A
+/// block's range ends just past its final newline.
+fn line_after_is_blank(input: &str, end: usize) -> bool {
+    input
+        .get(end..)
+        .and_then(|rest| rest.lines().next())
+        .is_none_or(is_blank)
 }
 
 // Paragraph events identify loose lists, but the first item can contain only
@@ -307,6 +386,10 @@ struct FormatterState {
     // Supplies cross-event right-flank context for the `_`/`~` escape check.
     next_text_char: Option<char>,
 
+    // Set by the outer format() loop: true on a comment block's Start (End)
+    // when the author left no blank line above (below) it.
+    attached: bool,
+
     // Table state
     table_alignments: Vec<Alignment>,
     table_head_cells: Vec<String>,
@@ -338,6 +421,7 @@ impl FormatterState {
             footnote_paragraphs: None,
             next_is_unordered_list: false,
             next_text_char: None,
+            attached: false,
             table_alignments: Vec::new(),
             table_head_cells: Vec::new(),
             table_data_rows: Vec::new(),
@@ -545,6 +629,9 @@ impl FormatterState {
                 self.inline.push_str("![");
             }
             Tag::HtmlBlock => {
+                if self.attached {
+                    self.needs_blank = false;
+                }
                 self.emit_blank_if_needed();
             }
             Tag::BlockQuote(_) => {
@@ -683,7 +770,7 @@ impl FormatterState {
                 if !self.out.ends_with('\n') {
                     self.out.push('\n');
                 }
-                self.needs_blank = true;
+                self.needs_blank = !self.attached;
             }
             TagEnd::BlockQuote(_) => {
                 self.bq_depth -= 1;
@@ -1818,6 +1905,120 @@ mod tests {
         assert_eq!(
             once, twice,
             "idempotency: code fence info string with backslash"
+        );
+    }
+
+    #[test]
+    fn test_front_matter_passed_through_verbatim() {
+        // Trailing whitespace is content in YAML block scalars, so it stays.
+        assert_formats_to(
+            "---\ntitle: T  \nlist:\n    - a\n---\n# Heading\n",
+            "---\ntitle: T  \nlist:\n    - a\n---\n\n# Heading\n",
+        );
+    }
+
+    #[test]
+    fn test_toml_front_matter_passed_through() {
+        assert_formats_to(
+            "+++\ntitle = \"T\"\n+++\n\n\n* item\n",
+            "+++\ntitle = \"T\"\n+++\n\n- item\n",
+        );
+    }
+
+    #[test]
+    fn test_front_matter_only() {
+        assert_formats_to("---\na: 1\n---\n\n\n", "---\na: 1\n---\n");
+    }
+
+    #[test]
+    fn test_front_matter_crlf() {
+        assert_eq!(
+            format("---\r\ntitle: T\r\n---\r\nBody\r\n"),
+            "---\ntitle: T\n---\n\nBody\n"
+        );
+    }
+
+    #[test]
+    fn test_directive_comment_stays_attached_to_heading() {
+        // A blank line here would make the directive govern the blank line.
+        assert_formats_to(
+            "# T\n\n<!-- mdlint-disable-next-line MD025 -->\n# Second\n",
+            "# T\n\n<!-- mdlint-disable-next-line MD025 -->\n# Second\n",
+        );
+    }
+
+    #[test]
+    fn test_comment_keeps_author_spacing() {
+        assert_formats_to("text\n<!-- c -->\ntext2\n", "text\n<!-- c -->\ntext2\n");
+        assert_formats_to(
+            "text\n\n\n<!-- c -->\n\n\ntext2\n",
+            "text\n\n<!-- c -->\n\ntext2\n",
+        );
+        assert_formats_to(
+            "text\n<!-- c -->\n\n* item\n",
+            "text\n<!-- c -->\n\n- item\n",
+        );
+    }
+
+    #[test]
+    fn test_comment_attached_to_list_and_fence() {
+        assert_formats_to(
+            "- a\n- b\n<!-- c -->\ntext\n",
+            "- a\n- b\n<!-- c -->\ntext\n",
+        );
+        assert_formats_to("~~~\nx\n~~~\n<!-- c -->\n", "```\nx\n```\n<!-- c -->\n");
+    }
+
+    #[test]
+    fn test_multi_line_comment_attached() {
+        assert_formats_to(
+            "<!--\nnote\n-->\n# Heading\n",
+            "<!--\nnote\n-->\n# Heading\n",
+        );
+    }
+
+    #[test]
+    fn test_non_comment_html_block_still_spaced() {
+        assert_formats_to("text\n<div>\nx\n</div>\n", "text\n\n<div>\nx\n</div>\n");
+    }
+
+    /// `mdlint format` output must pass `mdlint check` for the blank-line rules
+    /// the formatter enforces, and must leave a `disable-next-line` directive
+    /// governing the line it was written above.
+    #[test]
+    fn test_formatted_comments_and_front_matter_pass_check() {
+        use crate::config::Config;
+        use crate::lint::LintEngine;
+
+        let engine = LintEngine::new(Config {
+            default_enabled: Some(true),
+            ..Config::default()
+        });
+        let inputs = [
+            "---\ntitle: T\n---\nIntro\n",
+            "# T\n\n<!-- mdlint-disable-next-line MD025 -->\n# Second\n",
+            "# T\n<!-- c -->\n## Sub\n<!-- c -->\n- a\n- b\n<!-- c -->\n```text\nx\n```\n<!-- c -->\nEnd\n",
+            "---\ntitle: T\n---\n<!-- c -->\n## Sub\n",
+        ];
+        for input in inputs {
+            let formatted = format(input);
+            let violations = engine.lint_content(&formatted).unwrap();
+            assert!(
+                violations.is_empty(),
+                "format output should pass check.\nInput:\n{input}\nFormatted:\n{formatted}\n{violations:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_output_never_turns_into_front_matter() {
+        // `***` canonicalises to `---`; unguarded, the output's first lines would
+        // be read as front matter on the next pass, by check and format alike.
+        assert_formats_to("***\n\nIntro\n\n***\n", "\n---\n\nIntro\n\n---\n");
+        assert_formats_to("  +++\nfoo\n+++\n", "\n+++\nfoo\n+++\n");
+        assert_formats_to(
+            "[ref]: https://example.com\n---\n---\n<!-- c -->",
+            "[ref]: https://example.com\n\n---\n\n---\n<!-- c -->\n",
         );
     }
 }

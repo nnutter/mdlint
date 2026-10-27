@@ -1,8 +1,16 @@
 # mdlint.default.toml — all options with their default values
 #
 # Copy to mdlint.toml (or .mdlint.toml) in your project root.
-# mdlint searches upward from the working directory; configs closer to the
-# root override those further away (scalar values) or extend them (arrays).
+# mdlint searches upward from the working directory and merges every config it
+# finds; the one nearest the working directory wins for scalars, while arrays
+# (exclude, custom_rules) accumulate across all of them. An option a config
+# omits keeps whatever an outer config set it to.
+#
+# The same options can live in a manifest you already have: under a
+# [tool.mdlint] table in pyproject.toml, or a top-level "mdlint" key in
+# package.json. In pyproject.toml every key below is nested one level deeper,
+# so `gitignore = true` becomes part of [tool.mdlint] and [rules.MD013]
+# becomes [tool.mdlint.rules.MD013].
 #
 # Most projects need no config at all. `mdlint format` is opinionated and
 # requires no configuration. This file is for teams that want to disable
@@ -113,6 +121,13 @@ headings = true
 [rules.MD024]
 siblings_only = true
 
+# MD025 — Multiple top-level headings in the same document
+# front_matter_title: case-insensitive regular expression matched against each
+#   front matter line; a match counts as the document's first top-level heading.
+#   "" disables this; an invalid pattern stops `mdlint check` with an error.
+[rules.MD025]
+front_matter_title = '^\s*"?title"?\s*[:=]'
+
 # MD026 — Trailing punctuation in headings
 # punctuation: the set of characters that are not allowed at the end of a heading.
 [rules.MD026]
@@ -162,9 +177,12 @@ punctuation = ".,;:!?。，；：！？"
 
 # MD041 — First line in a file should be a top-level heading
 # level: the required heading level (1–6) for the first heading in the file.
+# front_matter_title: as for MD025; a matching front matter line satisfies the
+#   rule on its own.
 [rules.MD041]
 enabled = false
 level = 1
+front_matter_title = '^\s*"?title"?\s*[:=]'
 
 # MD043 — Required heading structure is an opt-in document-template policy.
 [rules.MD043]

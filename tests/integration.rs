@@ -252,7 +252,7 @@ fn safe_formatter_delimiters_pass_style_checks() {
 #[test]
 fn unicode_line_length_diagnostic_uses_a_byte_column() {
     let config = Config {
-        default_enabled: false,
+        default_enabled: Some(false),
         rules: std::collections::HashMap::from([(
             "MD013".to_owned(),
             RuleConfig::Config(std::collections::HashMap::from([(
@@ -346,7 +346,7 @@ fn format_output_for_nested_list_passes_check() {
 fn check_clean_file_has_no_violations() {
     let content = fixture("format/expected.md");
     let engine = LintEngine::new(Config {
-        default_enabled: true,
+        default_enabled: Some(true),
         rules: {
             // MD041 requires a top-level heading — our fixture has one, but MD013
             // line length and other cosmetic rules might fire; only disable none.

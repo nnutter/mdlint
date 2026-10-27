@@ -36,7 +36,13 @@ src/
 ### Configuration System
 
 - TOML is the config format (`mdlint.toml` or `.mdlint.toml`); hierarchical discovery walks up from cwd
-- Config merging: later (closer to root) configs override earlier; arrays extend rather than replace
+- Settings can also live in a manifest: `[tool.mdlint]` in `pyproject.toml`, `"mdlint"` in `package.json`
+  (`src/config/embedded.rs`). A manifest with no mdlint section returns `Ok(None)` so discovery keeps
+  walking up instead of stopping there; `--config` pointed at such a manifest is an error
+- Config merging: the config nearest the working directory wins; arrays extend rather than replace.
+  Scalars are `Option<bool>`/`Option<String>` so an omitted option can be told apart from one explicitly
+  set to the built-in default — read them through `Config::fix()`, `Config::gitignore()` etc., never the
+  field directly
 - Front matter: string-based detection for YAML (`---`) and TOML (`+++`) delimiters avoids regex overhead
 
 ### File Discovery and Globbing
@@ -51,6 +57,12 @@ src/
 - pulldown-cmark: return `impl Iterator<Item = Event<'a>>` to avoid lifetime complexity
 - Position tracking: cumulative byte offsets with `line.len() + 1` (accounting for newlines)
 - Extensions enabled: tables, footnotes, strikethrough, tasklists, heading attributes
+- Front matter is blanked to spaces (newlines kept) before pulldown-cmark sees it, so `title: x` over the closing `---`
+  is not a setext heading and byte offsets still match the raw text. pulldown-cmark's own metadata-block options are
+  no substitute: they recognise a `---` block anywhere in the document, not just at the top
+- HTML comments come from parser events (`InlineHtml`, and a scan inside each `HtmlBlock`), never from raw lines: a
+  `<!--` in a code span opened a phantom comment that silenced every rule to the end of the file. Inline directives
+  are read from the same comment ranges, so examples in code are inert
 
 ### Rule System
 
