@@ -2,16 +2,18 @@ use std::ops::Range;
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
-/// Join a soft break that continues the same sentence. Do not split sentences.
-/// Broken references still protect their labels; resolving them is unnecessary
-/// for locating prose boundaries.
+/// Put clear sentence boundaries on their own lines and join wrapped lines that
+/// continue the same sentence. Broken references still protect their labels;
+/// resolving them is unnecessary for locating prose boundaries.
 pub(super) fn format(text: &str, options: Options) -> String {
     let mut resolve = |_link: pulldown_cmark::BrokenLink<'_>| Some(("".into(), "".into()));
     let parser = Parser::new_with_broken_link_callback(text, options, Some(&mut resolve));
+    let events: Vec<_> = parser.into_offset_iter().collect();
     let mut protected_depth = 0;
     let mut visible = String::new();
-    let mut joins = Vec::new();
-    for (event, range) in parser.into_offset_iter() {
+    let mut starts_with_inline_code = false;
+    let mut edits = Vec::new();
+    for (event_index, (event, range)) in events.iter().enumerate() {
         match event {
             Event::Start(
                 Tag::Link { .. }
@@ -28,28 +30,107 @@ pub(super) fn format(text: &str, options: Options) -> String {
                 | TagEnd::Strikethrough,
             ) => protected_depth -= 1,
             Event::InlineHtml(_) | Event::Html(_) => return text.to_owned(),
-            Event::Text(_) | Event::Code(_) => visible.push_str(&text[range]),
+            Event::Text(_) => {
+                let mut current_sentence_start = None;
+                if protected_depth == 0 {
+                    for gap in sentence_gaps(&text[range.clone()]) {
+                        edits.push((range.start + gap.start..range.start + gap.end, '\n'));
+                        current_sentence_start = Some(gap.end);
+                    }
+                }
+                if let Some(start) = current_sentence_start {
+                    visible.clear();
+                    visible.push_str(&text[range.start + start..range.end]);
+                    starts_with_inline_code = false;
+                } else {
+                    visible.push_str(&text[range.clone()]);
+                }
+            }
+            Event::Code(_) => {
+                if visible
+                    .trim_start_matches([' ', '\t', '"', '\'', '“', '‘', '('])
+                    .is_empty()
+                {
+                    starts_with_inline_code = true;
+                }
+                visible.push_str(&text[range.clone()]);
+            }
             Event::SoftBreak if protected_depth == 0 => {
-                if continues_sentence(&visible, &text[range.end..]) {
-                    joins.push(soft_break_gap(text, range));
+                let next = first_sentence_char(&events[event_index + 1..]);
+                if continues_sentence(&visible, &text[range.end..], next, starts_with_inline_code) {
+                    edits.push((soft_break_gap(text, range.clone()), ' '));
                     visible.push(' ');
                 } else {
                     visible.clear();
+                    starts_with_inline_code = false;
                 }
             }
-            Event::HardBreak => visible.clear(),
+            Event::HardBreak => {
+                visible.clear();
+                starts_with_inline_code = false;
+            }
             _ => {}
         }
     }
     let mut out = String::with_capacity(text.len());
     let mut cursor = 0;
-    for gap in joins {
+    for (gap, replacement) in edits {
         out.push_str(&text[cursor..gap.start]);
-        out.push(' ');
+        out.push(replacement);
         cursor = gap.end;
     }
     out.push_str(&text[cursor..]);
     out
+}
+
+fn first_sentence_char(events: &[(Event<'_>, Range<usize>)]) -> Option<char> {
+    for (event, _) in events {
+        let content = match event {
+            Event::Text(text) | Event::Code(text) => text.as_ref(),
+            Event::Start(Tag::Emphasis | Tag::Strong | Tag::Strikethrough | Tag::Link { .. })
+            | Event::End(
+                TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough | TagEnd::Link,
+            ) => continue,
+            _ => return None,
+        };
+        for ch in content.chars() {
+            if !ch.is_whitespace() && !matches!(ch, '"' | '\'' | '“' | '‘' | '(') {
+                return Some(ch);
+            }
+        }
+    }
+    None
+}
+
+fn sentence_gaps(text: &str) -> Vec<Range<usize>> {
+    let mut gaps = Vec::new();
+    for (index, punctuation) in text.char_indices() {
+        if !matches!(punctuation, '.' | '!' | '?') {
+            continue;
+        }
+        let mut end = index + punctuation.len_utf8();
+        while let Some(c) = text[end..].chars().next() {
+            if !matches!(c, ')' | ']' | '"' | '\'' | '”' | '’') {
+                break;
+            }
+            end += c.len_utf8();
+        }
+        if !sentence_has_ended(&text[..end]) {
+            continue;
+        }
+        let start = end;
+        while matches!(text.as_bytes().get(end), Some(b' ' | b'\t')) {
+            end += 1;
+        }
+        if start == end {
+            continue;
+        }
+        let next = text[end..].trim_start_matches(['"', '\'', '“', '‘', '(']);
+        if next.chars().next().is_some_and(char::is_uppercase) {
+            gaps.push(start..end);
+        }
+    }
+    gaps
 }
 
 fn soft_break_gap(text: &str, range: Range<usize>) -> Range<usize> {
@@ -65,37 +146,50 @@ fn soft_break_gap(text: &str, range: Range<usize>) -> Range<usize> {
     start..end
 }
 
-fn continues_sentence(before: &str, after: &str) -> bool {
+fn continues_sentence(
+    before: &str,
+    after: &str,
+    next: Option<char>,
+    starts_with_inline_code: bool,
+) -> bool {
     let before = before.trim();
     let after = after.trim_start_matches(['\n', ' ', '\t']);
-    if before.is_empty() || after.is_empty() || line_starts_new_block(after) {
+    if before.is_empty() || after.is_empty() || next.is_none() || line_starts_new_block(after) {
         return false;
     }
-    let after_sentence = after.trim_start_matches(['"', '\'', '“', '‘', '(']);
-    if sentence_has_ended(before)
-        && after_sentence
-            .chars()
-            .next()
-            .is_some_and(char::is_uppercase)
-    {
+    if sentence_has_ended(before) && next.is_some_and(char::is_uppercase) {
         return false;
     }
-    starts_sentence(before) && wrapped_sentence_continues(before, after)
+    (starts_with_inline_code || starts_sentence(before)) && wrapped_sentence_continues(before, next)
 }
 
 fn line_starts_new_block(after: &str) -> bool {
     let line = after.lines().next().unwrap_or("");
-    line.starts_with(['#', '>', '|', '-', '+', '*'])
+    let heading_marker_width = line.chars().take_while(|&ch| ch == '#').count();
+    let is_heading = (1..=6).contains(&heading_marker_width)
+        && line[heading_marker_width..].starts_with([' ', '\t']);
+    let is_list_item = ["-", "+", "*"].iter().any(|marker| {
+        line.strip_prefix(marker)
+            .is_some_and(|rest| rest.starts_with([' ', '\t']))
+    });
+    let digits_end = line.bytes().take_while(u8::is_ascii_digit).count();
+    let after_number = &line[digits_end..];
+    let is_ordered_list = digits_end > 0
+        && after_number
+            .strip_prefix('.')
+            .or_else(|| after_number.strip_prefix(')'))
+            .is_some_and(|rest| rest.starts_with([' ', '\t']));
+    let is_reference_definition = line.starts_with('[') && line.contains("]:");
+    is_heading
+        || line.starts_with(['>', '|'])
+        || is_list_item
+        || is_ordered_list
+        || is_reference_definition
         || line.starts_with("```")
         || line.starts_with("~~~")
-        || line.chars().next().is_some_and(|ch| ch.is_ascii_digit()) && line.contains(". ")
 }
 
-fn wrapped_sentence_continues(before: &str, after: &str) -> bool {
-    let next = after
-        .trim_start_matches(['"', '\'', '“', '‘', '('])
-        .chars()
-        .next();
+fn wrapped_sentence_continues(before: &str, next: Option<char>) -> bool {
     next.is_some_and(char::is_lowercase)
         && (sentence_is_open(before) || !sentence_has_ended(before))
 }
