@@ -15,7 +15,7 @@ use crate::markdown::detect_front_matter;
 /// - Uses ATX-style headings
 /// - Uses `-` for unordered list markers
 /// - Uses safe backtick or tilde fences for code blocks
-/// - Joins a soft break that continues the same sentence, without splitting sentences or reflowing to a column limit
+/// - Splits at clear sentence boundaries, joins wrapped lines that continue the same sentence, and does not reflow prose to a column limit
 /// - Passes front matter through verbatim, one blank line above the body
 #[must_use]
 pub fn format(input: &str) -> String {

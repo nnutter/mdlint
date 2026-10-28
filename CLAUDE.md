@@ -6,8 +6,7 @@
 
 mdlint is an **opinionated Markdown formatter** first, linter second — analogous to ruff or gofmt.
 The formatter (`mdlint format`) enforces a canonical style by rewriting files.
-The linter
-(`mdlint check`) reports violations that fall outside what the formatter can fix automatically.
+The linter (`mdlint check`) reports violations that fall outside what the formatter can fix automatically.
 
 Core principles: correctness over performance, type safety, minimal code, no duplication, comprehensive testing.
 
@@ -36,9 +35,8 @@ src/
 ### Configuration System
 
 - TOML is the config format (`mdlint.toml` or `.mdlint.toml`); hierarchical discovery walks up from cwd
-- Settings can also live in a manifest: `[tool.mdlint]` in `pyproject.toml`, `"mdlint"` in `package.json`
-  (`src/config/embedded.rs`). A manifest with no mdlint section returns `Ok(None)` so discovery keeps
-  walking up instead of stopping there; `--config` pointed at such a manifest is an error
+- Settings can also live in a manifest: `[tool.mdlint]` in `pyproject.toml`, `"mdlint"` in `package.json` (`src/config/embedded.rs`).
+  A manifest with no mdlint section returns `Ok(None)` so discovery keeps walking up instead of stopping there; `--config` pointed at such a manifest is an error
 - Config merging: the config nearest the working directory wins; arrays extend rather than replace.
   Scalars are `Option<bool>`/`Option<String>` so an omitted option can be told apart from one explicitly set to the built-in default — read them through `Config::fix()`, `Config::gitignore()` etc., never the field directly
 - Front matter: string-based detection for YAML (`---`) and TOML (`+++`) delimiters avoids regex overhead
@@ -57,13 +55,12 @@ src/
 - Extensions enabled: tables, footnotes, strikethrough, tasklists, heading attributes
 - Front matter is blanked to spaces (newlines kept) before pulldown-cmark sees it, so `title: x` over the closing `---` is not a setext heading and byte offsets still match the raw text. pulldown-cmark's own metadata-block options are no substitute: they recognise a `---` block anywhere in the document, not just at the top
 - HTML comments come from parser events (`InlineHtml`, and a scan inside each `HtmlBlock`), never from raw lines: a
-  `<!--` in a code span opened a phantom comment that silenced every rule to the end of the file. Inline directives
-  are read from the same comment ranges, so examples in code are inert
+  `<!--` in a code span opened a phantom comment that silenced every rule to the end of the file.
+  Inline directives are read from the same comment ranges, so examples in code are inert
 
 ### Rule System
 
-- `Rule` trait: `name()`, `description()`, `tags()`, `check(&MarkdownParser, Option<&Value>)`,
-  `fixable()` (default false)
+- `Rule` trait: `name()`, `description()`, `tags()`, `check(&MarkdownParser, Option<&Value>)`, `fixable()` (default false)
 - Registry pattern: `HashMap`-based with `create_default_registry()`
 - Rules parse their own config from `Option<&Value>`
 
@@ -75,9 +72,7 @@ src/
 - Hard line breaks: trailing-space syntax (two spaces + `\n`) must become backslash continuation
   (`\\\n`) before trailing-whitespace stripping, otherwise the line break is lost
 - Code blocks inside list items must be indented by the marker width (3 spaces for an ordered
-  `1.` marker, 2 for an unordered `-` marker) to remain inside the list; tracked via
-  `list_item_widths` stack in `FormatterState`;
-  pulldown-cmark strips the indent on parse so the formatter must re-add it on emit
+  `1.` marker, 2 for an unordered `-` marker) to remain inside the list; tracked via `list_item_widths` stack in `FormatterState`; pulldown-cmark strips the indent on parse so the formatter must re-add it on emit
 - `src/formatter/mod.rs` = canonical markdown rewriter; `src/format/` = output formatters
   (JSON, SARIF, JUnit, default) — different concerns, different directories
 - Raw HTML blocks and code block contents are passed through verbatim
@@ -85,9 +80,7 @@ src/
 ### Code Quality
 
 - All checks run via `prek run -a` (defined in `prek.toml`), managed by `mise` (`mise.toml`)
-- `prek run -a` runs hooks sequentially with `fail_fast = true`:
-  trailing-whitespace → end-of-file-fixer → actionlint → hadolint → tombi check → tombi format →
-  clippy (with `--fix`) → rustfmt → cargo test → mdlint check (dogfood) → mdlint format (dogfood)
+- `prek run -a` runs hooks sequentially with `fail_fast = true`: trailing-whitespace → end-of-file-fixer → actionlint → hadolint → tombi check → tombi format → clippy (with `--fix`) → rustfmt → cargo test → mdlint check (dogfood) → mdlint format (dogfood)
 - With `fail_fast`, each failure is one thing to fix; re-run after fixing until all hooks pass
 - Formatting hooks (rustfmt, tombi format, end-of-file-fixer, trailing-whitespace) modify files in place and report failure — re-running immediately after often passes with no further changes needed
 - Clippy runs as errors: `-D warnings`; autofix (`--fix --allow-dirty`) applied before tests
@@ -113,8 +106,7 @@ src/
 
 ### Fix Framework
 
-- `Fix` struct uses **1-indexed** line/column numbers; `Fixer` converts to 0-indexed internally with
-  `saturating_sub(1)` — rule implementations must use 1-indexed values (e.g. from `offset_to_line`)
+- `Fix` struct uses **1-indexed** line/column numbers; `Fixer` converts to 0-indexed internally with `saturating_sub(1)` — rule implementations must use 1-indexed values (e.g. from `offset_to_line`)
 - Empty-replacement whole-line fix (`replacement: ""`, no column range) = **delete the line**; the Fixer splices it out of the Vec rather than setting it to an empty string
 - Embedded newlines in a replacement string create extra lines in the output — used by some rules (e.g. MD022) to insert blank lines around headings without requiring a multi-line fix range
 - Default config has `fix = true`, so `mdlint check` without an explicit config always applies fixes; tests that verify the no-fix path must supply a config file with `fix = false`
@@ -149,8 +141,7 @@ src/
 
 ### Adding a linting rule
 
-1. Create `src/lint/rules/mdXXX.rs` and implement the `Rule` trait
-   (`name`, `description`, `tags`, `check`).
+1. Create `src/lint/rules/mdXXX.rs` and implement the `Rule` trait (`name`, `description`, `tags`, `check`).
    Return `true` from `fixable()` if `mdlint format` enforces this rule.
 1. Register it in `create_default_registry()` in `src/lint/rules/mod.rs`
 1. Write tests in the same file — both a violation-detection test and a fix-application test (see Testing Strategy: every transformation test must cover both modes)

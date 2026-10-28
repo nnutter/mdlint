@@ -184,23 +184,22 @@ expanding to the next 4-space tab stop.
 
 Tabs inside fenced code blocks and indented code blocks are preserved verbatim.
 
-### Prose Line Breaks
+### Prose Sentence Boundaries
 
-Do not split sentences, and do not reflow prose to a column limit.
-Join a soft line break when both sides belong to the same sentence.
+Prefer one sentence per source line when the boundary is unambiguous. Add a soft line break after `.`, `!`, or `?` followed by horizontal whitespace and an uppercase sentence start.
 A sentence starts with an uppercase letter. Quotes and parentheses may precede that letter.
-A sentence ends at `.`, `!`, or `?` followed by horizontal whitespace and an uppercase sentence start.
 Closing quotes and parentheses can occur before the whitespace, and opening quotes can precede the next sentence.
-Leave a soft break at that boundary, and leave every other soft break unchanged.
-Preserve hard line breaks.
+Join an existing soft line break when the following line continues the same sentence; leave other soft breaks unchanged.
+A leading inline-code term does not prevent joining a later soft break in its sentence; do not join a break inside the code span.
+Do not reflow prose to a column limit. Preserve hard line breaks.
 
 Treat common abbreviations, initials, decimals, ellipses, URLs, and filenames as ambiguous rather than guessing their sentence boundaries.
 Leave lowercase and numeric sentence starts unchanged.
-Do not join a soft break inside emphasis, strikethrough, code spans, links, images, or reference labels.
+Do not split or join inside emphasis, strikethrough, code spans, links, images, or reference labels.
 Leave paragraphs containing inline HTML unchanged.
-Headings, table cells, code blocks, and reference definitions do not receive this prose joining.
+Headings, table cells, code blocks, and reference definitions do not receive these prose transformations.
 
-Apply the same prose policy inside list items, blockquotes, and footnotes.
+Apply the same prose policy inside list items, blockquotes, and footnotes, indenting new continuation lines so they stay in their original block.
 
 ### Multiple Consecutive Blank Lines (MD012)
 
@@ -296,7 +295,7 @@ the line directly below it, and a blank line inserted there would silently disab
 ## What the Formatter Does NOT Change
 
 - **Paragraph content.** Do not change words or punctuation.
-  Preserve hard breaks. Join a soft break only when it continues the same sentence. Do not split sentences or reflow to a column limit.
+  Split at clear sentence boundaries, join soft breaks that continue a sentence, and do not reflow to a column limit.
 - **Code block contents.** The content inside fenced or indented code blocks is preserved
   character-for-character, including indentation, tabs, and blank lines.
 - **Inline code.** The content inside backtick spans is not modified.
