@@ -83,6 +83,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f  # v2
@@ -111,6 +113,8 @@ jobs:
           gh --version
 
       - name: Build release binary
+        env:
+          MDLINT_RELEASE_TAG: ${{ inputs.release }}
         run: cargo build --release --target ${{ matrix.target }}
 
       # The container sets the floor; this proves it landed, so a base-image

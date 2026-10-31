@@ -16,7 +16,7 @@ const STYLES: Styles = Styles::styled()
 #[command(
     author,
     name = "mdlint",
-    version,
+    version = env!("MDLINT_VERSION"),
     about = "An opinionated Markdown formatter and linter",
     after_help = "For help with a specific command, see: `mdlint help <command>`",
     styles = STYLES,
