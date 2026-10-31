@@ -7,6 +7,11 @@ on:
         description: GitHub release to upload artifacts into
         required: true
         type: string
+      dry_run:
+        description: Build and package, but upload nothing
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   release:
@@ -94,6 +99,17 @@ jobs:
         if: ${{ matrix.container != '' }}
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      # TEMP: proves the container jobs can reach the repository, which is
+      # what failed in v0.4.3. It sits after the trust step, so passing here
+      # is evidence for that step. Remove with the dry run.
+      - name: Dry run - read the tag from the repository
+        if: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          # --always keeps this honest on an untagged merge ref.
+          git describe --tags --long --always
+
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f  # v2
         with:
@@ -155,6 +171,21 @@ jobs:
             exit 1
           fi
 
+      # TEMP: proves the release tag reached the binary. Remove with the dry
+      # run.
+      - name: Dry run - read the version back from the binary
+        if: ${{ inputs.dry_run && endsWith(matrix.target, '-linux-gnu') }}
+        env:
+          BINARY: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          TAG: ${{ inputs.release }}
+        run: |
+          set -euo pipefail
+          # build.rs drops the leading "v", so look for what it embeds.
+          expected="${TAG#v}"
+          # Scan the whole file rather than one section: the literal does not
+          # always land in .rodata.
+          grep -aoF "$expected" "$BINARY" | sort -u
+
       - name: Package release (Unix)
         if: ${{ matrix.os != 'windows-latest' }}
         working-directory: target/${{ matrix.target }}/release
@@ -189,6 +220,7 @@ jobs:
           "$hash  ${{ matrix.asset_name }}.zip" | Out-File -Encoding ASCII ${{ matrix.asset_name }}.zip.sha256
 
       - name: Upload release assets
+        if: ${{ !inputs.dry_run }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         working-directory: target/${{ matrix.target }}/release
