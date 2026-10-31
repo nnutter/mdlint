@@ -86,6 +86,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Container jobs run as root while the workspace binding stays owned by
+      # the runner user, so Git refuses it as dubious ownership. The entry
+      # checkout adds lands in a temporary HOME that it discards before the
+      # next step, so it does not help here.
+      - name: Trust the workspace (container only)
+        if: ${{ matrix.container != '' }}
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f  # v2
         with:
