@@ -5,7 +5,12 @@ fn git(args: &[&str]) -> String {
         .args(args)
         .output()
         .expect("Git is required to build mdlint");
-    assert!(output.status.success(), "git {} failed", args.join(" "));
+    assert!(
+        output.status.success(),
+        "git {} failed: {}",
+        args.join(" "),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
     String::from_utf8(output.stdout)
         .expect("Git output must be UTF-8")
         .trim()
