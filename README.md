@@ -497,7 +497,8 @@ The `Build GitHub Release` workflow starts when a matching tag is pushed.
 It requires an existing tag and does not create tags or change package versions.
 
 The workflow creates a draft GitHub Release, builds binaries for all 7 platforms, and uploads them to the draft.
-It publishes the release only after all binary builds and uploads succeed.
+It then signs the binaries with packslip (`release.toml`) as `packslip.sigstore.json` and uploads the bundle to the draft.
+It publishes the release only after all binary builds, uploads, and the packslip signing succeed.
 Linting and tests run separately through the CI workflow.
 Package and container registries are not published to automatically.
 After publishing a release, the tag workflow calls `.github/workflows/update-tap.yaml` to update `mdlint` in `nnutter/homebrew-tap`.

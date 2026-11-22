@@ -206,5 +206,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.asset_name }}
-          path: target/${{ matrix.target }}/release/${{ matrix.asset_name }}
+          # Stage both the bare binary and the archive for the packslip
+          # signing job in tag.yml; `release.toml` lists both per platform.
+          path: |
+            target/${{ matrix.target }}/release/${{ matrix.asset_name }}
+            target/${{ matrix.target }}/release/${{ matrix.asset_name }}.${{ matrix.archive_format }}
           retention-days: 3
