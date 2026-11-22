@@ -1,0 +1,62 @@
+# packslip manifest for mdlint releases.
+#
+# Describes the platform binaries `jdx/packslip` signs in
+# `.github/workflows/tag.yml` after the matrix in
+# `.github/workflows/release-binaries.yml` uploads them.
+# The action derives `project`, `version`, `url_base` and `source`
+# from the release tag and repository, so this file only declares the
+# executable and the per-artifact host requirements that `packslip create`
+# does not detect. `bin = ["mdlint"]` resolves to `mdlint` in each archive
+# and to `mdlint.exe` in the Windows archive.
+#
+# `mise install` provides the matching `packslip` CLI (`1.11.4`) for local
+# verification: `packslip verify packslip.sigstore.json --artifact ...`.
+# See https://packslip.dev/docs/publishing/ for the workflow.
+
+bin = ["mdlint"]
+
+[[artifact]]
+path = "dist/mdlint-linux-x86_64"
+requires = { glibc_min = "2.28" }
+
+[[artifact]]
+path = "dist/mdlint-linux-x86_64.tar.gz"
+requires = { glibc_min = "2.28" }
+
+[[artifact]]
+path = "dist/mdlint-linux-x86_64-musl"
+
+[[artifact]]
+path = "dist/mdlint-linux-x86_64-musl.tar.gz"
+
+[[artifact]]
+path = "dist/mdlint-linux-aarch64"
+requires = { glibc_min = "2.28" }
+
+[[artifact]]
+path = "dist/mdlint-linux-aarch64.tar.gz"
+requires = { glibc_min = "2.28" }
+
+[[artifact]]
+path = "dist/mdlint-linux-aarch64-musl"
+
+[[artifact]]
+path = "dist/mdlint-linux-aarch64-musl.tar.gz"
+
+[[artifact]]
+path = "dist/mdlint-macos-x86_64"
+
+[[artifact]]
+path = "dist/mdlint-macos-x86_64.tar.gz"
+
+[[artifact]]
+path = "dist/mdlint-macos-aarch64"
+
+[[artifact]]
+path = "dist/mdlint-macos-aarch64.tar.gz"
+
+[[artifact]]
+path = "dist/mdlint-windows-x86_64.exe"
+
+[[artifact]]
+path = "dist/mdlint-windows-x86_64.exe.zip"

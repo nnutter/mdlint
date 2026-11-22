@@ -50,12 +50,87 @@ jobs:
       release: ${{ github.ref_name }}
 
   ####
+  # Sign the platform binaries with packslip before publishing
+  ####
+  # The signing job has no `contents: write`: it stages the binaries
+  # uploaded as Actions artifacts by `release-binaries.yml`, signs them
+  # keylessly, and stages the bundle as an artifact. The sibling job
+  # with `contents: write` attaches the bundle to the draft release.
+  # Kept separate so the action never runs with release write access.
+  # See https://packslip.dev/docs/publishing/#keep-the-action-away-from-release-write-access
+
+  packslip:
+    name: Sign release (packslip)
+    needs: release-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Download staged binaries
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: downloads
+
+      - name: Stage artifacts for packslip
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for dir in downloads/mdlint-*; do
+            cp -v "$dir"/* dist/
+          done
+          ls -lh dist/
+
+      - name: Sign release bundle
+        id: packslip
+        uses: jdx/packslip@e0340e0c1d10c90a434de2b90f3a1ba345923564 # v1.11.4
+        with:
+          artifacts: dist/mdlint-linux-* dist/mdlint-macos-* dist/mdlint-windows-*
+          bin: mdlint
+          manifest: release.toml
+          upload: false
+
+      - name: Upload packslip bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: packslip-bundle
+          path: ${{ steps.packslip.outputs.bundle }}
+          if-no-files-found: error
+
+  publish-packslip:
+    name: Publish packslip bundle
+    needs: packslip
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packslip bundle
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: packslip-bundle
+          path: packslip
+
+      - name: Upload bundle to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -f packslip/packslip.sigstore.json
+          gh release upload "${{ github.ref_name }}" packslip/packslip.sigstore.json \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+  ####
   # Finalize the draft release
   ####
 
   publish-release:
     name: Publish Release
-    needs: release-binaries
+    needs: publish-packslip
     runs-on: ubuntu-latest
     permissions:
       contents: write

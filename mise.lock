@@ -177,6 +177,40 @@ url = "https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-w
 url_api = "https://api.github.com/repos/hadolint/hadolint/releases/assets/496546508"
 provenance = "github-attestations"
 
+[[tools.packslip]]
+version = "1.11.4"
+backend = "packslip:packslip.dev"
+
+[tools.packslip."platforms.linux-arm64"]
+checksum = "sha256:0cd0e3f96917dacbc0a993affacfc2a838df2503e3ac2017cee072c064cb30bc"
+url = "https://packslip.dev/v1.11.4/packslip-v1.11.4-linux-arm64.tar.xz"
+signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
+
+[tools.packslip."platforms.linux-arm64-musl"]
+checksum = "sha256:0cd0e3f96917dacbc0a993affacfc2a838df2503e3ac2017cee072c064cb30bc"
+url = "https://packslip.dev/v1.11.4/packslip-v1.11.4-linux-arm64.tar.xz"
+signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
+
+[tools.packslip."platforms.linux-x64"]
+checksum = "sha256:011ccc784584a466bd12a96f76c8e7a3ff365a2c99aee53884140cecf020aadd"
+url = "https://packslip.dev/v1.11.4/packslip-v1.11.4-linux-x64.tar.xz"
+signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
+
+[tools.packslip."platforms.linux-x64-musl"]
+checksum = "sha256:011ccc784584a466bd12a96f76c8e7a3ff365a2c99aee53884140cecf020aadd"
+url = "https://packslip.dev/v1.11.4/packslip-v1.11.4-linux-x64.tar.xz"
+signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
+
+[tools.packslip."platforms.macos-arm64"]
+checksum = "sha256:a97d048677de32ade64ea353d85c4aeebc8dc1e2adee51f83e0cb0311e135e52"
+url = "https://packslip.dev/v1.11.4/packslip-v1.11.4-darwin-arm64.tar.xz"
+signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
+
+[tools.packslip."platforms.windows-x64"]
+checksum = "sha256:8d0a3efedc68bf9dffdf4f88946ff4e48e3a6fdafa52a6889ad18c1479e80f68"
+url = "https://packslip.dev/v1.11.4/packslip-v1.11.4-windows-x64.zip"
+signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
+
 [[tools.prek]]
 version = "0.5.5"
 backend = "aqua:j178/prek"
